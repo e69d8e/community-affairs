@@ -6,12 +6,15 @@ server:
 spring:
   application:
     name: community-affairs
+  config:
+    import: "optional:file:.env[.properties]"  # 自动读取项目根目录 .env，避免忘记 source
 
+  # 数据库连接
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/community_affairs?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://127.0.0.1:3306/community_affairs?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: ${MYSQL_USER:root}
-    password: ${MYSQL_PASSWORD:123456}
+    password: ${MYSQL_PASSWORD}
     hikari:
       minimum-idle: 5
       maximum-pool-size: 20
@@ -22,14 +25,14 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:123456}
+      host: 127.0.0.1
+      port: 6379
+      password: ${REDIS_PASSWORD}
       database: 0
       timeout: 5000ms
 
   elasticsearch:
-    uris: ${ES_URIS:http://127.0.0.1:9200}
+    uris: http://127.0.0.1:9200
     connection-timeout: 5s
     socket-timeout: 10s
 
@@ -52,14 +55,12 @@ mybatis-plus:
 
 # MinIO 对象存储配置
 minio:
-  endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+  endpoint: http://127.0.0.1:9000
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
-  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  secret-key: ${MINIO_SECRET_KEY}
   bucket-name: community-files
 
-# JWT 鉴权配置
-# 生产必须通过环境变量 JWT_SECRET 提供密钥（不少于 32 字节随机串，如 openssl rand -base64 48 生成），
-# 未设置时应用启动即失败，避免各部署共用同一硬编码密钥
+# JWT 鉴权配置（密钥必须由 .env 或环境变量提供，未设置时启动即失败）
 jwt:
   secret: ${JWT_SECRET}
   expiration: 604800000 # 7天 (毫秒)

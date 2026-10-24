@@ -19,5 +19,8 @@ logs/
 hs_err_pid*
 replay_pid*
 
+# 本地环境变量（密钥等不入库，模板见 .env.example）
+.env
+
 # ZCode 会话产物
 .zcode/
