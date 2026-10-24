@@ -24,13 +24,15 @@ CREATE TABLE `sys_user` (
   `role` VARCHAR(32) NOT NULL DEFAULT 'ROLE_RESIDENT' COMMENT '主角色编码',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '账号状态: 1-正常, 0-停用',
   `credit_score` INT NOT NULL DEFAULT 100 COMMENT '社区互助信用积分',
+  `community_id` BIGINT DEFAULT NULL COMMENT '所属小区ID(NULL=平台级账号,如系统管理员)',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '注册创建时间',
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-未删, 1-已删',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`),
   KEY `idx_phone` (`phone`),
-  KEY `idx_role` (`role`)
+  KEY `idx_role` (`role`),
+  KEY `idx_user_community` (`community_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统用户表';
 
 -- ------------------------------------------------------------------------------
@@ -363,6 +365,7 @@ CREATE TABLE `biz_report` (
   `target_type` VARCHAR(32) NOT NULL COMMENT '目标类型: POST(帖子), COMMENT(评论), USER(用户)',
   `target_id` BIGINT NOT NULL COMMENT '被举报对象ID',
   `reporter_id` BIGINT NOT NULL COMMENT '举报居民ID',
+  `community_id` BIGINT DEFAULT NULL COMMENT '举报人所属小区ID(冗余,用于社区隔离)',
   `reason_category` VARCHAR(64) NOT NULL COMMENT '举报原因: 色情低俗, 虚假广告, 恶意辱骂, 价格欺诈, 违禁物品',
   `description` VARCHAR(500) DEFAULT '' COMMENT '详细举报说明',
   `evidence_images` JSON DEFAULT NULL COMMENT '举证截图',
@@ -373,7 +376,8 @@ CREATE TABLE `biz_report` (
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_report_target` (`target_type`, `target_id`),
-  KEY `idx_report_status` (`status`)
+  KEY `idx_report_status` (`status`),
+  KEY `idx_report_community` (`community_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='违规举报处理表';
 
 -- ------------------------------------------------------------------------------
@@ -459,16 +463,19 @@ INSERT INTO `sys_role` (`id`, `role_code`, `role_name`, `description`) VALUES
 (4, 'ROLE_GRID_OFFICER', '网格员 / 楼栋长', '负责本楼栋住户走访、工单初审、违规举报初查、活动现场扫码签到'),
 (5, 'ROLE_RESIDENT', '普通居民', '享受社区便民服务、发起在线报修投诉、参与二手互助集市与活动报名');
 
--- 预置初始用户 (密码统一为 123456)
+-- 预置初始用户 (密码统一为 123456; community_id: NULL=平台级账号)
 -- BCrypt: $2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62
-INSERT INTO `sys_user` (`id`, `username`, `password`, `real_name`, `phone`, `avatar`, `gender`, `role`, `status`, `credit_score`) VALUES
-(1001, 'admin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '系统超级管理员', '13800000001', 'https://api.dicebear.com/7.x/bottts/svg?seed=admin', 1, 'ROLE_SYSTEM_ADMIN', 1, 150),
-(1002, 'community_admin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '林主任(社区委)', '13800000002', 'https://api.dicebear.com/7.x/avataaars/svg?seed=lin', 0, 'ROLE_COMMUNITY_ADMIN', 1, 130),
-(1003, 'property_admin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '陈主管(物业处)', '13800000003', 'https://api.dicebear.com/7.x/avataaars/svg?seed=chen', 1, 'ROLE_PROPERTY_ADMIN', 1, 120),
-(1004, 'grid_officer', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '王网格(1号楼长)', '13800000004', 'https://api.dicebear.com/7.x/avataaars/svg?seed=wang_grid', 1, 'ROLE_GRID_OFFICER', 1, 115),
-(1005, 'resident', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '李晓华(居民)', '13800000005', 'https://api.dicebear.com/7.x/avataaars/svg?seed=resident_li', 1, 'ROLE_RESIDENT', 1, 105),
-(1006, 'resident_zhang', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '张阿姨(热心业主)', '13800000006', 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhang_ay', 0, 'ROLE_RESIDENT', 1, 125),
-(1007, 'resident_wang', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '王小川(年轻租客)', '13800000007', 'https://api.dicebear.com/7.x/avataaars/svg?seed=wang_xc', 1, 'ROLE_RESIDENT', 1, 100);
+INSERT INTO `sys_user` (`id`, `username`, `password`, `real_name`, `phone`, `avatar`, `gender`, `role`, `status`, `credit_score`, `community_id`) VALUES
+(1001, 'admin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '系统超级管理员', '13800000001', 'https://api.dicebear.com/7.x/bottts/svg?seed=admin', 1, 'ROLE_SYSTEM_ADMIN', 1, 150, NULL),
+(1002, 'community_admin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '林主任(社区委)', '13800000002', 'https://api.dicebear.com/7.x/avataaars/svg?seed=lin', 0, 'ROLE_COMMUNITY_ADMIN', 1, 130, 101),
+(1003, 'property_admin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '陈主管(物业处)', '13800000003', 'https://api.dicebear.com/7.x/avataaars/svg?seed=chen', 1, 'ROLE_PROPERTY_ADMIN', 1, 120, 101),
+(1004, 'grid_officer', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '王网格(1号楼长)', '13800000004', 'https://api.dicebear.com/7.x/avataaars/svg?seed=wang_grid', 1, 'ROLE_GRID_OFFICER', 1, 115, 101),
+(1005, 'resident', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '李晓华(居民)', '13800000005', 'https://api.dicebear.com/7.x/avataaars/svg?seed=resident_li', 1, 'ROLE_RESIDENT', 1, 105, 101),
+(1006, 'resident_zhang', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '张阿姨(热心业主)', '13800000006', 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhang_ay', 0, 'ROLE_RESIDENT', 1, 125, 101),
+(1007, 'resident_wang', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '王小川(年轻租客)', '13800000007', 'https://api.dicebear.com/7.x/avataaars/svg?seed=wang_xc', 1, 'ROLE_RESIDENT', 1, 100, 101),
+(1008, 'community_admin2', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '周书记(枫林府社区委)', '13800000008', 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhou_shuji', 0, 'ROLE_COMMUNITY_ADMIN', 1, 130, 102),
+(1009, 'grid_officer2', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '赵网格(枫林府1号楼长)', '13800000009', 'https://api.dicebear.com/7.x/avataaars/svg?seed=zhao_grid', 1, 'ROLE_GRID_OFFICER', 1, 115, 102),
+(1010, 'resident_lin', '$2a$10$1mv0PTjRrMgxm3HAwG88tex1O3yLllEZ8XcKboTGR6CpEKOUAsU62', '林悦(枫林府居民)', '13800000010', 'https://api.dicebear.com/7.x/avataaars/svg?seed=lin_yue', 0, 'ROLE_RESIDENT', 1, 105, 102);
 
 -- 用户角色绑定
 INSERT INTO `sys_user_role` (`id`, `user_id`, `role_id`) VALUES
@@ -478,24 +485,32 @@ INSERT INTO `sys_user_role` (`id`, `user_id`, `role_id`) VALUES
 (4, 1004, 4),
 (5, 1005, 5),
 (6, 1006, 5),
-(7, 1007, 5);
+(7, 1007, 5),
+(8, 1008, 2),
+(9, 1009, 4),
+(10, 1010, 5);
 
--- 预置小区
+-- 预置小区 (两个小区共用一套系统, 验证多社区数据隔离)
 INSERT INTO `biz_community` (`id`, `name`, `code`, `address`, `province`, `city`, `district`, `contact_person`, `contact_phone`, `longitude`, `latitude`, `description`) VALUES
-(101, '阳光翠竹苑智慧社区', 'YG-CZY-01', '文三西路888号', '浙江省', '杭州市', '西湖区', '陈主管', '0571-88889999', 120.1287600, 30.2831500, '国家级绿色智慧示范示范社区，建有现代化邻里中心、阳光便民服务站、智能化安防监控及分类环保回收驿站。');
+(101, '阳光翠竹苑智慧社区', 'YG-CZY-01', '文三西路888号', '浙江省', '杭州市', '西湖区', '陈主管', '0571-88889999', 120.1287600, 30.2831500, '国家级绿色智慧示范示范社区，建有现代化邻里中心、阳光便民服务站、智能化安防监控及分类环保回收驿站。'),
+(102, '云栖枫林府智慧社区', 'YX-FLF-02', '转塘街道美院南路99号', '浙江省', '杭州市', '西湖区', '周书记', '0571-86666777', 120.0876500, 30.1903200, '毗邻云栖小镇的高品质人才安居社区，配建共享书房、屋顶农场、全龄段健身环道与24小时无人智慧服务站。');
 
--- 预置楼栋 (网格长为 1004)
+-- 预置楼栋 (101 网格长为 1004, 102 网格长为 1009)
 INSERT INTO `biz_building` (`id`, `community_id`, `building_name`, `building_no`, `total_units`, `total_floors`, `grid_officer_id`) VALUES
 (201, 101, '1号楼 (晨曦苑)', 'B01', 2, 18, 1004),
 (202, 101, '2号楼 (竹韵苑)', 'B02', 2, 18, 1004),
-(203, 101, '3号楼 (雅居苑)', 'B03', 1, 11, 1004);
+(203, 101, '3号楼 (雅居苑)', 'B03', 1, 11, 1004),
+(204, 102, '1号楼 (云澜苑)', 'B01', 1, 26, 1009),
+(205, 102, '2号楼 (枫雅苑)', 'B02', 1, 18, 1009);
 
 -- 预置单元
 INSERT INTO `biz_unit` (`id`, `building_id`, `unit_name`, `unit_no`, `has_elevator`) VALUES
 (301, 201, '1单元', 'U01', 1),
 (302, 201, '2单元', 'U02', 1),
 (303, 202, '1单元', 'U01', 1),
-(304, 203, '1单元', 'U01', 1);
+(304, 203, '1单元', 'U01', 1),
+(305, 204, '1单元', 'U01', 1),
+(306, 205, '1单元', 'U01', 1);
 
 -- 预置房屋
 INSERT INTO `biz_house` (`id`, `community_id`, `building_id`, `unit_id`, `house_no`, `floor_num`, `area`, `house_type`, `live_status`) VALUES
@@ -504,13 +519,17 @@ INSERT INTO `biz_house` (`id`, `community_id`, `building_id`, `unit_id`, `house_
 (403, 101, 201, 301, '301室', 3, 125.60, '四室两厅', 1),
 (404, 101, 201, 301, '302室', 3, 89.50, '两室一厅', 2),
 (405, 101, 202, 303, '501室', 5, 105.00, '三室一厅', 1),
-(406, 101, 203, 304, '601室', 6, 140.00, '四室两厅', 3);
+(406, 101, 203, 304, '601室', 6, 140.00, '四室两厅', 3),
+(407, 102, 204, 305, '1201室', 12, 96.00, '三室一厅', 1),
+(408, 102, 204, 305, '1301室', 13, 96.00, '三室一厅', 2),
+(409, 102, 205, 306, '801室', 8, 128.00, '四室两厅', 1);
 
 -- 住户与房屋认证绑定
 INSERT INTO `biz_resident_house` (`id`, `user_id`, `house_id`, `identity_type`, `cert_status`, `cert_material`) VALUES
 (501, 1005, 403, 1, 1, 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800'),
 (502, 1006, 402, 1, 1, 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800'),
-(503, 1007, 404, 3, 1, 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800');
+(503, 1007, 404, 3, 1, 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800'),
+(504, 1010, 407, 1, 1, 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800');
 
 -- 敏感词库预置
 INSERT INTO `biz_sensitive_word` (`id`, `word`, `category`, `action`, `status`) VALUES
@@ -529,12 +548,14 @@ INSERT INTO `biz_sensitive_word` (`id`, `word`, `category`, `action`, `status`) 
 INSERT INTO `sys_notice` (`id`, `title`, `notice_type`, `community_id`, `target_scope`, `target_building_ids`, `is_top`, `content`, `publisher_id`, `publisher_name`, `view_count`, `status`) VALUES
 (601, '【防台防汛应急预案】强台风黄色预警防御指引与社区避难所开放通告', 4, 101, 1, NULL, 1, '<p>广大翠竹苑邻里居民：</p><p>接市气象台紧急台风黄色预警，预计今夜至明日将伴随大风强降雨天气。请各位业主紧闭门窗，移走阳台室外花盆杂物。社区党群服务中心一楼已设立24小时应急避险服务点，配备热水、应急药品与饮用水。如遇地下车库返水或树木倒伏，请第一时间拨打社区24小时应急电话：0571-88889999。</p>', 1002, '林主任(社区委)', 389, 1),
 (602, '关于本周六小区主管道二次加压供水清洗消杀及临时停水通知', 3, 101, 2, '[201, 202]', 0, '<p>尊敬的1号楼、2号楼业主：</p><p>为保障二次供水卫生安全，物业工程部计划于本周六上午 08:30 - 11:30 对楼顶生活水箱进行全面清洗消毒，期间高层区将暂停自来水供应，请受影响居民提前做好储水准备。恢复供水后如有短暂混浊请放水30秒即可正常使用，感谢您的理解与配合！</p>', 1003, '陈主管(物业处)', 156, 1),
-(603, '翠竹苑社区2026年第二季度居民自治与综合事务满意度问卷征集', 1, 101, 1, NULL, 0, '<p>社区是我家，治理靠大家。为了不断提高社区环境卫生、文体活动组织与报修处理效率，现面向全区常住居民开展线上匿名满意度评议，您的每一条真诚建议都是我们前进的动力！</p>', 1002, '林主任(社区委)', 210, 1);
+(603, '翠竹苑社区2026年第二季度居民自治与综合事务满意度问卷征集', 1, 101, 1, NULL, 0, '<p>社区是我家，治理靠大家。为了不断提高社区环境卫生、文体活动组织与报修处理效率，现面向全区常住居民开展线上匿名满意度评议，您的每一条真诚建议都是我们前进的动力！</p>', 1002, '林主任(社区委)', 210, 1),
+(604, '枫林府共享书房开放时间调整及屋顶农场认领招募公告', 2, 102, 1, NULL, 1, '<p>各位枫林府邻里：因设备升级维护，共享书房本周日起开放时间调整为每日 10:00-21:00。同时屋顶农场二期种植箱现开放认领，每户限认领一格，可在物业前台或线上登记，先到先得！</p>', 1008, '周书记(枫林府社区委)', 76, 1);
 
 -- 预置社区活动
 INSERT INTO `biz_activity` (`id`, `title`, `cover_image`, `category`, `community_id`, `location`, `start_time`, `end_time`, `signup_start_time`, `signup_end_time`, `max_participants`, `current_participants`, `status`, `organizer`, `contact_phone`, `description`) VALUES
 (701, '翠竹苑邻里百家宴暨中秋金秋游园会', 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800', '邻里文体', 101, '社区中心阳光大草坪', '2026-10-25 17:30:00', '2026-10-25 21:00:00', '2026-10-20 00:00:00', '2026-10-24 23:59:59', 50, 12, 1, '社区居委会 & 阳光义工团', '0571-88889999', '共聚邻里温情，每一户参与居民可带上一道拿手好菜（甜点/冷盘/热炒皆可）。现场设有投壶、灯谜、非遗糖画等趣味民俗摊位，报名成功后即可生成签到入场核销凭证！'),
-(702, '居民日常应急救护技能普及与 AED/心肺复苏实操实战公益沙龙', 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800', '公益讲座', 101, '党群服务中心2楼多功能演播厅', '2026-10-28 14:00:00', '2026-10-28 16:30:00', '2026-10-20 00:00:00', '2026-10-27 18:00:00', 30, 8, 1, '红十字会急救普及志愿队', '13800000002', '特邀三甲急诊专家亲自示范成人/儿童心肺复苏 (CPR) 规范指引、异物海姆立克急救法以及社区公用 AED 自动体外除颤仪的标准开机操作，全程手把手实操练习，合格学员颁发社区初级急救志愿者荣誉证书。');
+(702, '居民日常应急救护技能普及与 AED/心肺复苏实操实战公益沙龙', 'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800', '公益讲座', 101, '党群服务中心2楼多功能演播厅', '2026-10-28 14:00:00', '2026-10-28 16:30:00', '2026-10-20 00:00:00', '2026-10-27 18:00:00', 30, 8, 1, '红十字会急救普及志愿队', '13800000002', '特邀三甲急诊专家亲自示范成人/儿童心肺复苏 (CPR) 规范指引、异物海姆立克急救法以及社区公用 AED 自动体外除颤仪的标准开机操作，全程手把手实操练习，合格学员颁发社区初级急救志愿者荣誉证书。'),
+(703, '枫林府屋顶农场秋日亲子播种节 & 稻草人创意大赛', 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800', '亲子农趣', 102, '2号楼屋顶农场', '2026-11-02 09:30:00', '2026-11-02 11:30:00', '2026-10-22 00:00:00', '2026-11-01 18:00:00', 20, 5, 1, '枫林府居委会 & 云栖志愿者联盟', '0571-86666777', '秋天是播种希望的季节！诚邀各家庭认领种植箱，亲手栽下萝卜、菠菜与豌豆苗，孩子们还可以用旧衣物合作扎制专属稻草人参赛，优秀作品将驻守农场一整个秋天。');
 
 -- 预置活动报名记录 (核销码 6位数字)
 INSERT INTO `biz_activity_signup` (`id`, `activity_id`, `user_id`, `resident_name`, `resident_phone`, `verify_code`, `qr_code_content`, `status`) VALUES
@@ -546,12 +567,14 @@ INSERT INTO `biz_activity_signup` (`id`, `activity_id`, `user_id`, `resident_nam
 INSERT INTO `biz_market_post` (`id`, `post_type`, `community_id`, `user_id`, `title`, `description`, `price`, `trade_type`, `delivery_type`, `trade_address`, `contact_type`, `contact_value`, `images`, `status`, `view_count`, `like_count`, `comment_count`) VALUES
 (901, 1, 101, 1005, '九成新婴幼儿可折叠便携溜娃推车 (带遮阳蓬避震)', '宝宝已长大换大童三轮车，这款轻便小推车转让给有需要的邻居。带一键折叠功能，车架结实铝合金，布套全部拆洗消毒干净，送防雨防蚊罩。', 85.00, 1, 1, '1号楼1单元大堂自提', '手机/微信', '13800000005', '["https://images.unsplash.com/photo-1591088398332-8a7791972843?w=800"]', 1, 45, 6, 2),
 (902, 2, 101, 1006, '【急求借】家中阳台安装晾衣架，急求借用电锤/冲击钻2小时，备自制曲奇答谢！', '邻居们好，今天下午家里装铝合金晾衣架需在混凝土墙上打4个孔，求借一把冲击钻用一两个小时，用完立即完好归还，附赠阿姨上午刚出炉的手工蔓越莓曲奇一盒~', 0.00, 4, 1, '1号楼201室上门取', '站内私信', '张阿姨', '["https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800"]', 1, 62, 12, 3),
-(903, 3, 101, 1007, '搬家整理出一批多肉植物与绿萝盆栽，全部免费结缘本小区邻友', '因为换租到外地工作，阳台精心养了三年的多肉植物带不走，全部带盆免费赠送给爱花爱草的邻居，先到先选，绿色环保低碳传递！', 0.00, 3, 2, '2号楼架空层连廊自取', '站内私信', '王小川', '["https://images.unsplash.com/photo-1485955900006-10f4d324d411?w=800"]', 1, 88, 18, 5);
+(903, 3, 101, 1007, '搬家整理出一批多肉植物与绿萝盆栽，全部免费结缘本小区邻友', '因为换租到外地工作，阳台精心养了三年的多肉植物带不走，全部带盆免费赠送给爱花爱草的邻居，先到先选，绿色环保低碳传递！', 0.00, 3, 2, '2号楼架空层连廊自取', '站内私信', '王小川', '["https://images.unsplash.com/photo-1485955900006-10f4d324d411?w=800"]', 1, 88, 18, 5),
+(904, 1, 102, 1010, '九成新儿童滑步车/平衡车转让 (云栖枫林府自提)', '娃升级骑自行车了，这辆平衡车成色很好，轮胎几乎无磨损，高度可三档调节，适合2-5岁宝宝，枫林府邻居可上门试骑。', 120.00, 1, 1, '1号楼1单元大堂自提', '手机/微信', '13800000010', '["https://images.unsplash.com/photo-1610824352934-c10d87b700cc?w=800"]', 1, 21, 3, 1);
 
 -- 预置工单 (报修与投诉)
 INSERT INTO `biz_work_order` (`id`, `order_no`, `order_type`, `category`, `community_id`, `building_id`, `house_id`, `reporter_id`, `reporter_name`, `reporter_phone`, `title`, `content`, `images`, `status`, `is_urgent`, `reviewer_id`, `review_time`, `review_remark`, `handler_id`, `handler_name`, `handler_phone`, `handle_time`) VALUES
 (10001, 'WO202610220001', 1, '电梯设施', 101, 201, 403, 1005, '李晓华', '13800000005', '1号楼客梯运行至8楼附近有轻微刮擦异响与停顿', '早上上班乘坐1号楼1单元客梯下行，在8层至7层之间听到明显的金属摩擦异响，轿厢伴有轻微震颤，存在安全隐患，请物业尽快安排维保单位排查轨道！', '["https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800"]', 3, 1, 1004, '2026-10-22 09:10:00', '情况属实，已加急转派迅捷电梯定点维保师傅', 1003, '陈主管(物业处)', '0571-88889999', '2026-10-22 09:20:00'),
-(10002, 'WO202610220002', 2, '违规飞线充电', 101, 202, 405, 1006, '张阿姨', '13800000006', '2号楼架空层消防通道处有业主私拉飞线为电瓶车过夜充电', '昨晚散步发现2号楼南侧单元门旁有人从二楼窗户悬挂插线板飞线给电动自行车充电，旁边就是配电箱和杂物堆，消防隐患极大！', '["https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=800"]', 1, 1, NULL, NULL, '', NULL, '', '', NULL);
+(10002, 'WO202610220002', 2, '违规飞线充电', 101, 202, 405, 1006, '张阿姨', '13800000006', '2号楼架空层消防通道处有业主私拉飞线为电瓶车过夜充电', '昨晚散步发现2号楼南侧单元门旁有人从二楼窗户悬挂插线板飞线给电动自行车充电，旁边就是配电箱和杂物堆，消防隐患极大！', '["https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=800"]', 1, 1, NULL, NULL, '', NULL, '', '', NULL),
+(10003, 'WO202610230001', 1, '电梯设施', 102, 204, 407, 1010, '林悦', '13800000010', '1号楼高层客梯轿厢照明闪烁并偶发开门延迟', '最近一周乘坐1号楼客梯，轿厢顶灯频繁闪烁，且到站开门偶有2-3秒延迟，担心感应器老化，请物业安排检修，谢谢！', '["https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800"]', 1, 0, NULL, NULL, '', NULL, '', '', NULL);
 
 -- 预置工单流转日志
 INSERT INTO `biz_order_log` (`id`, `order_id`, `action_type`, `from_status`, `to_status`, `operator_id`, `operator_name`, `operator_role`, `remark`) VALUES

@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.result.PageResult;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.common.utils.DfaFilterUtil;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.BizMarketPostMapper;
@@ -48,6 +49,7 @@ public class ModerationServiceImpl implements ModerationService {
     private final SysUserNoticeMapper userNoticeMapper;
     private final SearchItemElasticsearchRepository searchRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final CommunityScopeResolver scopeResolver;
 
     private final DfaFilterUtil dfaFilterUtil = new DfaFilterUtil();
 
@@ -62,9 +64,12 @@ public class ModerationServiceImpl implements ModerationService {
             List<BizSensitiveWord> list = sensitiveWordMapper.selectList(
                     new LambdaQueryWrapper<BizSensitiveWord>().eq(BizSensitiveWord::getStatus, 1)
             );
-            Set<String> words = list.stream().map(BizSensitiveWord::getWord).collect(Collectors.toSet());
-            dfaFilterUtil.buildTree(words);
-            log.info("DFA 敏感词前缀树初始化加载完成，当前有效敏感词汇数: {}", words.size());
+            Map<String, String> wordActions = list.stream().collect(Collectors.toMap(
+                    BizSensitiveWord::getWord,
+                    w -> w.getAction() != null ? w.getAction() : DfaFilterUtil.ACTION_REJECT,
+                    (a, b) -> a));
+            dfaFilterUtil.buildTree(wordActions);
+            log.info("DFA 敏感词前缀树初始化加载完成，当前有效敏感词汇数: {}", wordActions.size());
         } catch (Exception e) {
             log.warn("加载敏感词树异常: {}", e.getMessage());
         }
@@ -73,6 +78,16 @@ public class ModerationServiceImpl implements ModerationService {
     @Override
     public boolean containsSensitiveWord(String text) {
         return dfaFilterUtil.contains(text);
+    }
+
+    @Override
+    public boolean containsRejectWord(String text) {
+        return dfaFilterUtil.containsReject(text);
+    }
+
+    @Override
+    public Set<String> findRejectWords(String text) {
+        return dfaFilterUtil.findRejectWords(text);
     }
 
     @Override
@@ -144,6 +159,7 @@ public class ModerationServiceImpl implements ModerationService {
                 .targetType(dto.getTargetType())
                 .targetId(dto.getTargetId())
                 .reporterId(reporterId)
+                .communityId(SecurityUtils.getCommunityId()) // 冗余举报人所属小区, 用于社区隔离
                 .reasonCategory(dto.getReasonCategory())
                 .description(dto.getDescription() != null ? dto.getDescription() : "")
                 .evidenceImages(cleanJson(dto.getEvidenceImages()))
@@ -154,11 +170,13 @@ public class ModerationServiceImpl implements ModerationService {
     }
 
     @Override
-    public PageResult<BizReport> listReports(Integer status, Long page, Long size) {
+    public PageResult<BizReport> listReports(Integer status, Long communityId, Long page, Long size) {
         Page<BizReport> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
+        Long communityScope = scopeResolver.resolveAdminScope(communityId);
         Page<BizReport> result = reportMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizReport>()
+                        .eq(communityScope != null, BizReport::getCommunityId, communityScope)
                         .eq(status != null, BizReport::getStatus, status)
                         .orderByDesc(BizReport::getCreateTime)
         );

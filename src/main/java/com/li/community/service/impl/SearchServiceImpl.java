@@ -4,6 +4,7 @@ import cn.hutool.core.date.DateUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.li.community.common.constant.RedisKeyConstant;
 import com.li.community.common.result.PageResult;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.mapper.BizActivityMapper;
 import com.li.community.mapper.BizMarketPostMapper;
 import com.li.community.mapper.SysNoticeMapper;
@@ -36,6 +37,7 @@ public class SearchServiceImpl implements SearchService {
     private final BizActivityMapper activityMapper;
     private final BizMarketPostMapper marketPostMapper;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final CommunityScopeResolver scopeResolver;
 
     @PostConstruct
     public void initSync() {
@@ -56,10 +58,13 @@ public class SearchServiceImpl implements SearchService {
     }
 
     @Override
-    public PageResult<SearchItemDoc> search(String keyword, String itemType, Long page, Long size) {
+    public PageResult<SearchItemDoc> search(String keyword, String itemType, Long communityId, Long page, Long size) {
         int pageIndex = (page != null && page > 0) ? (page.intValue() - 1) : 0;
         int pageSize = (size != null && size > 0) ? size.intValue() : 10;
         Pageable pageable = PageRequest.of(pageIndex, pageSize);
+
+        // 社区数据范围: 非平台管理员强制本小区, 平台管理员不指定时全局检索
+        Long communityScope = scopeResolver.resolveAdminScope(communityId);
 
         // 记录热搜词频
         if (keyword != null && !keyword.trim().isEmpty()) {
@@ -70,10 +75,20 @@ public class SearchServiceImpl implements SearchService {
 
         try {
             Page<SearchItemDoc> esResult;
-            if (itemType != null && !itemType.trim().isEmpty()) {
-                esResult = searchRepository.findByItemTypeAndTitleContaining(itemType.trim(), keyword != null ? keyword : "", pageable);
-            } else if (keyword != null && !keyword.trim().isEmpty()) {
-                esResult = searchRepository.findByTitleContainingOrContentContaining(keyword, keyword, pageable);
+            String kw = keyword != null ? keyword : "";
+            if (communityScope != null) {
+                if (itemType != null && !itemType.trim().isEmpty()) {
+                    esResult = searchRepository.findByCommunityIdAndItemTypeAndTitleContaining(communityScope, itemType.trim(), kw, pageable);
+                } else if (!kw.trim().isEmpty()) {
+                    esResult = searchRepository.findByCommunityIdAndTitleContainingOrCommunityIdAndContentContaining(
+                            communityScope, kw, communityScope, kw, pageable);
+                } else {
+                    esResult = searchRepository.findByCommunityId(communityScope, pageable);
+                }
+            } else if (itemType != null && !itemType.trim().isEmpty()) {
+                esResult = searchRepository.findByItemTypeAndTitleContaining(itemType.trim(), kw, pageable);
+            } else if (!kw.trim().isEmpty()) {
+                esResult = searchRepository.findByTitleContainingOrContentContaining(kw, kw, pageable);
             } else {
                 esResult = searchRepository.findAll(pageable);
             }

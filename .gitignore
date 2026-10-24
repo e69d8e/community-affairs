@@ -24,3 +24,4 @@ replay_pid*
 
 # ZCode 会话产物
 .zcode/
+.playwright-cli/

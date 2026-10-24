@@ -14,9 +14,14 @@ public interface WorkOrderService {
 
     WorkOrderVo getOrderDetail(Long orderId);
 
+    /**
+     * 按数字主键或工单编号 (如 WO202610220001) 查询工单详情
+     */
+    WorkOrderVo getOrderDetailByIdOrNo(String idOrNo);
+
     void evaluateOrder(WorkOrderEvaluateDto dto);
 
-    PageResult<WorkOrderVo> listAdminOrders(Integer orderType, Integer status, Long buildingId, Integer isUrgent, Long page, Long size);
+    PageResult<WorkOrderVo> listAdminOrders(Integer orderType, Integer status, Long buildingId, Integer isUrgent, Long communityId, Long page, Long size);
 
     void auditOrder(WorkOrderAuditDto dto);
 
@@ -26,5 +31,5 @@ public interface WorkOrderService {
 
     void completeOrder(WorkOrderHandleDto dto);
 
-    void exportOrdersExcel(HttpServletResponse response);
+    void exportOrdersExcel(Long communityId, HttpServletResponse response);
 }

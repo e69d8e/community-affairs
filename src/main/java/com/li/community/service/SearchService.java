@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface SearchService {
 
-    PageResult<SearchItemDoc> search(String keyword, String itemType, Long page, Long size);
+    PageResult<SearchItemDoc> search(String keyword, String itemType, Long communityId, Long page, Long size);
 
     void syncAllToEs();
 

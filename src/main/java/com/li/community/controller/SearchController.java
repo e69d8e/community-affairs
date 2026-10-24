@@ -20,14 +20,15 @@ public class SearchController {
 
     private final SearchService searchService;
 
-    @Operation(summary = "全网多维度关键词全文检索 (IK分词与高亮)")
+    @Operation(summary = "全网多维度关键词全文检索 (IK分词与高亮; 非平台管理员仅检索本人小区数据)")
     @GetMapping
     public Result<PageResult<SearchItemDoc>> search(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String itemType,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(searchService.search(keyword, itemType, page, size));
+        return Result.success(searchService.search(keyword, itemType, communityId, page, size));
     }
 
     @Operation(summary = "管理员手动触发全量数据重新同步至 Elasticsearch")

@@ -1,7 +1,10 @@
 package com.li.community.filter;
 
 import com.li.community.common.constant.RedisKeyConstant;
+import com.li.community.common.security.LoginUser;
 import com.li.community.common.utils.JwtUtils;
+import com.li.community.mapper.SysUserMapper;
+import com.li.community.model.entity.SysUser;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -29,6 +32,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtils jwtUtils;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final SysUserMapper sysUserMapper;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -55,9 +59,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String role = jwtUtils.getRoleOfClaims(claims);
+        Long communityId = jwtUtils.getCommunityIdOfClaims(claims);
+        boolean platformAccount = Boolean.TRUE.equals(claims.get("platform"));
+        // 旧版本令牌未携带社区信息: 回查用户表自愈, 避免强制所有用户重新登录
+        if (communityId == null && !platformAccount) {
+            SysUser user = sysUserMapper.selectById(userId);
+            if (user != null) {
+                communityId = user.getCommunityId();
+            }
+        }
+
+        LoginUser principal = new LoginUser(userId, claims.getSubject(), role, communityId);
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
-                        userId,
+                        principal,
                         null,
                         role != null ? Collections.singletonList(new SimpleGrantedAuthority(role)) : Collections.emptyList()
                 );

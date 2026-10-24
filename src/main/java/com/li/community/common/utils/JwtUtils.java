@@ -31,10 +31,16 @@ public class JwtUtils {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(Long userId, String username, String role) {
+    public String generateToken(Long userId, String username, String role, Long communityId) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
         claims.put("role", role);
+        if (communityId != null) {
+            claims.put("communityId", communityId);
+        } else {
+            // 平台级账号(communityId=NULL): 显式标记, 避免过滤器对旧令牌误判而回查数据库
+            claims.put("platform", true);
+        }
 
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
@@ -94,6 +100,21 @@ public class JwtUtils {
     public String getRoleOfClaims(Claims claims) {
         Object role = claims.get("role");
         return role instanceof String s ? s : null;
+    }
+
+    public Long getCommunityIdOfClaims(Claims claims) {
+        Object communityId = claims.get("communityId");
+        if (communityId instanceof Number number) {
+            return number.longValue();
+        }
+        if (communityId == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(communityId.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     public boolean isTokenExpired(String token) {

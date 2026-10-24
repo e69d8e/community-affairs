@@ -22,13 +22,14 @@ public class NoticeController {
 
     private final NoticeService noticeService;
 
-    @Operation(summary = "公开/居民浏览社区公告列表")
+    @Operation(summary = "公开/居民浏览社区公告列表 (登录后默认本人小区; 匿名需携带 communityId)")
     @GetMapping("/list")
     public Result<PageResult<SysNotice>> listNotices(
             @RequestParam(required = false) Integer noticeType,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(noticeService.listNotices(noticeType, page, size));
+        return Result.success(noticeService.listNotices(noticeType, communityId, page, size));
     }
 
     @Operation(summary = "获取公告详情 (自动增加阅读浏览量)")

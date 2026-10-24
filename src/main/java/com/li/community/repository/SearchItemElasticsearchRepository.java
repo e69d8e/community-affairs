@@ -16,4 +16,13 @@ public interface SearchItemElasticsearchRepository extends ElasticsearchReposito
     Page<SearchItemDoc> findByItemTypeAndTitleContaining(String itemType, String title, Pageable pageable);
 
     List<SearchItemDoc> findByTargetIdAndItemType(Long targetId, String itemType);
+
+    // ===== 多社区(多租户)隔离查询: 平台管理员不指定小区时走上方全局方法 =====
+
+    Page<SearchItemDoc> findByCommunityId(Long communityId, Pageable pageable);
+
+    Page<SearchItemDoc> findByCommunityIdAndItemTypeAndTitleContaining(Long communityId, String itemType, String title, Pageable pageable);
+
+    Page<SearchItemDoc> findByCommunityIdAndTitleContainingOrCommunityIdAndContentContaining(
+            Long communityIdTitle, String title, Long communityIdContent, String content, Pageable pageable);
 }

@@ -11,7 +11,7 @@ public interface UserService {
 
     void updatePassword(String oldPassword, String newPassword);
 
-    PageResult<UserVo> listUsers(String keyword, String role, Long page, Long size);
+    PageResult<UserVo> listUsers(String keyword, String role, Long communityId, Long page, Long size);
 
     void updateUserStatus(Long userId, Integer status);
 

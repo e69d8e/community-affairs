@@ -3,6 +3,7 @@ package com.li.community.controller;
 import com.li.community.common.result.Result;
 import com.li.community.model.dto.AuthLoginDto;
 import com.li.community.model.dto.AuthRegisterDto;
+import com.li.community.model.entity.BizCommunity;
 import com.li.community.model.vo.LoginVo;
 import com.li.community.model.vo.UserVo;
 import com.li.community.service.AuthService;
@@ -11,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @Tag(name = "01. 认证与会话模块")
 @RestController
@@ -43,5 +46,11 @@ public class AuthController {
     @GetMapping("/current")
     public Result<UserVo> getCurrentUser() {
         return Result.success(authService.getCurrentUser());
+    }
+
+    @Operation(summary = "获取启用中的小区列表 (注册选择社区/前端社区切换器共用)")
+    @GetMapping("/communities")
+    public Result<List<BizCommunity>> listCommunities() {
+        return Result.success(authService.listActiveCommunities());
     }
 }

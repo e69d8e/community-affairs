@@ -58,6 +58,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/login",
                                 "/api/auth/register",
+                                "/api/auth/communities",
                                 "/doc.html",
                                 "/webjars/**",
                                 "/v3/api-docs/**",

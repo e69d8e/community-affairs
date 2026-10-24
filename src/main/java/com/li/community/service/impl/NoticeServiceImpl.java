@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.toolkit.Db;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.result.PageResult;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.BizResidentHouseMapper;
 import com.li.community.mapper.BizHouseMapper;
@@ -43,13 +44,16 @@ public class NoticeServiceImpl implements NoticeService {
     private final BizHouseMapper houseMapper;
     private final SearchItemElasticsearchRepository searchRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final CommunityScopeResolver scopeResolver;
 
     @Override
-    public PageResult<SysNotice> listNotices(Integer noticeType, Long page, Long size) {
+    public PageResult<SysNotice> listNotices(Integer noticeType, Long communityId, Long page, Long size) {
         Page<SysNotice> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
+        Long communityScope = scopeResolver.resolvePublicScope(communityId);
         Page<SysNotice> result = noticeMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<SysNotice>()
+                        .eq(SysNotice::getCommunityId, communityScope)
                         .eq(noticeType != null, SysNotice::getNoticeType, noticeType)
                         .eq(SysNotice::getStatus, 1) // 仅已发布
                         .orderByDesc(SysNotice::getIsTop)
@@ -85,7 +89,7 @@ public class NoticeServiceImpl implements NoticeService {
                 .id(noticeId)
                 .title(dto.getTitle())
                 .noticeType(dto.getNoticeType())
-                .communityId(dto.getCommunityId() != null ? dto.getCommunityId() : 101L)
+                .communityId(scopeResolver.resolveForCreate(dto.getCommunityId()))
                 .targetScope(dto.getTargetScope() != null ? dto.getTargetScope() : 1)
                 .targetBuildingIds(cleanJson(dto.getTargetBuildingIds()))
                 .isTop(dto.getIsTop() != null ? dto.getIsTop() : 0)
@@ -161,11 +165,12 @@ public class NoticeServiceImpl implements NoticeService {
         Set<Long> targetUserIds = new HashSet<>();
 
         if (notice.getTargetScope() == 1) {
-            // 全区广播：给所有启用居民发送（只查 ID 列）
+            // 全区广播：给本小区所有启用居民发送（只查 ID 列），避免跨小区误发
             List<SysUser> allUsers = userMapper.selectList(
                     new LambdaQueryWrapper<SysUser>()
                             .select(SysUser::getId)
-                            .eq(SysUser::getStatus, 1));
+                            .eq(SysUser::getStatus, 1)
+                            .eq(SysUser::getCommunityId, notice.getCommunityId()));
             for (SysUser u : allUsers) {
                 targetUserIds.add(u.getId());
             }

@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.result.PageResult;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.BizMarketPostMapper;
 import com.li.community.mapper.BizPostCommentMapper;
@@ -52,6 +53,7 @@ public class MarketPostServiceImpl implements MarketPostService {
     private final ModerationService moderationService;
     private final SearchItemElasticsearchRepository searchRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final CommunityScopeResolver scopeResolver;
 
     private static final Set<String> ADMIN_ROLES = Set.of(
             "ROLE_SYSTEM_ADMIN", "ROLE_COMMUNITY_ADMIN", "ROLE_PROPERTY_ADMIN", "ROLE_GRID_OFFICER");
@@ -60,12 +62,14 @@ public class MarketPostServiceImpl implements MarketPostService {
     private static final Set<Integer> POST_STATUSES = Set.of(1, 2, 3, 4);
 
     @Override
-    public PageResult<MarketPostVo> listPosts(Integer postType, Integer status, String keyword, Long page, Long size) {
+    public PageResult<MarketPostVo> listPosts(Integer postType, Integer status, String keyword, Long communityId, Long page, Long size) {
         Page<BizMarketPost> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
 
+        Long communityScope = scopeResolver.resolvePublicScope(communityId);
         Page<BizMarketPost> result = marketPostMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizMarketPost>()
+                        .eq(BizMarketPost::getCommunityId, communityScope)
                         .eq(postType != null, BizMarketPost::getPostType, postType)
                         .eq(status != null, BizMarketPost::getStatus, status)
                         .ne(status == null, BizMarketPost::getStatus, 4) // 默认过滤封禁违规
@@ -119,20 +123,22 @@ public class MarketPostServiceImpl implements MarketPostService {
         Long userId = SecurityUtils.getUserId();
         SysUser user = userMapper.selectById(userId);
 
-        // DFA 敏感词安全过滤拦截
-        if (moderationService.containsSensitiveWord(dto.getTitle()) ||
-                moderationService.containsSensitiveWord(dto.getDescription())) {
+        // DFA 敏感词安全过滤：REJECT 词直接拦截，REPLACE 词脱敏(替换为*)后放行
+        if (moderationService.containsRejectWord(dto.getTitle()) ||
+                moderationService.containsRejectWord(dto.getDescription())) {
             Set<String> badWords = new HashSet<>();
-            badWords.addAll(moderationService.findSensitiveWords(dto.getTitle()));
-            badWords.addAll(moderationService.findSensitiveWords(dto.getDescription()));
+            badWords.addAll(moderationService.findRejectWords(dto.getTitle()));
+            badWords.addAll(moderationService.findRejectWords(dto.getDescription()));
             throw new BizException(ErrorCode.CONTENT_SENSITIVE_REJECT, "发布内容包含违禁敏感词汇 " + badWords + "，已被系统安全拦截");
         }
+        dto.setTitle(moderationService.replaceSensitiveWords(dto.getTitle()));
+        dto.setDescription(moderationService.replaceSensitiveWords(dto.getDescription()));
 
         long postId = IdUtil.getSnowflakeNextId();
         BizMarketPost post = BizMarketPost.builder()
                 .id(postId)
                 .postType(dto.getPostType())
-                .communityId(101L)
+                .communityId(scopeResolver.resolveForCreate(null))
                 .userId(userId)
                 .title(dto.getTitle())
                 .description(dto.getDescription())
@@ -234,10 +240,11 @@ public class MarketPostServiceImpl implements MarketPostService {
     public BizPostComment addComment(CommentCreateDto dto) {
         Long userId = SecurityUtils.getUserId();
 
-        // 敏感词安全过滤拦截
-        if (moderationService.containsSensitiveWord(dto.getContent())) {
+        // 敏感词安全过滤：REJECT 词拦截，REPLACE 词脱敏放行
+        if (moderationService.containsRejectWord(dto.getContent())) {
             throw new BizException(ErrorCode.CONTENT_SENSITIVE_REJECT, "评论包含违规词汇，已被安全拦截");
         }
+        dto.setContent(moderationService.replaceSensitiveWords(dto.getContent()));
 
         BizMarketPost post = marketPostMapper.selectById(dto.getPostId());
         if (post == null) throw new BizException(ErrorCode.POST_NOT_FOUND);

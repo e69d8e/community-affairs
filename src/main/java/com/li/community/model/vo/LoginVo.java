@@ -26,4 +26,9 @@ public class LoginVo implements Serializable {
     private Integer gender;
     private String role;
     private Integer creditScore;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long communityId; // 所属小区ID; NULL=平台级账号
+
+    private String communityName; // 所属小区名称(平台级账号为空)
 }

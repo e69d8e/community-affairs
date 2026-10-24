@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -66,10 +67,17 @@ public class GlobalExceptionHandler {
         return Result.error(ErrorCode.NOT_FOUND.getCode(), "请求的静态资源或路径不存在");
     }
 
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        log.warn("参数类型不匹配: {} -> {}", e.getName(), e.getValue());
+        return Result.error(ErrorCode.BAD_REQUEST.getCode(), "请求参数格式不正确，请检查后重试");
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleGlobalException(Exception e) {
         log.error("系统未捕获全局异常: ", e);
-        return Result.error(ErrorCode.INTERNAL_ERROR.getCode(), "系统繁忙，请稍后再试: " + e.getMessage());
+        return Result.error(ErrorCode.INTERNAL_ERROR.getCode(), "系统繁忙，请稍后再试");
     }
 }

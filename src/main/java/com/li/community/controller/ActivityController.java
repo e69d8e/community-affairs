@@ -28,14 +28,15 @@ public class ActivityController {
 
     private final ActivityService activityService;
 
-    @Operation(summary = "公开/居民查询活动列表")
+    @Operation(summary = "公开/居民查询活动列表 (登录后默认本人小区; 匿名需携带 communityId)")
     @GetMapping("/list")
     public Result<PageResult<ActivityVo>> listActivities(
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(activityService.listActivities(category, status, page, size));
+        return Result.success(activityService.listActivities(category, status, communityId, page, size));
     }
 
     @Operation(summary = "获取活动详情 (含当前用户报名状态)")

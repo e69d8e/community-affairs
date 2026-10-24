@@ -77,12 +77,13 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public PageResult<UserVo> listUsers(String keyword, String role, Long page, Long size) {
+    public PageResult<UserVo> listUsers(String keyword, String role, Long communityId, Long page, Long size) {
         Page<SysUser> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
         Page<SysUser> result = userMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<SysUser>()
                         .eq(role != null && !role.isEmpty(), SysUser::getRole, role)
+                        .eq(communityId != null, SysUser::getCommunityId, communityId)
                         .and(keyword != null && !keyword.trim().isEmpty(), w ->
                                 w.like(SysUser::getUsername, keyword.trim())
                                         .or()
@@ -103,6 +104,7 @@ public class UserServiceImpl implements UserService {
                 .status(u.getStatus())
                 .creditScore(u.getCreditScore())
                 .createTime(u.getCreateTime())
+                .communityId(u.getCommunityId())
                 .build()
         ).collect(Collectors.toList());
 

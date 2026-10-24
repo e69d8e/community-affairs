@@ -11,6 +11,7 @@ import com.li.community.common.constant.RedisKeyConstant;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.result.PageResult;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.common.utils.QRCodeUtil;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.BizActivityMapper;
@@ -60,6 +61,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final SysUserNoticeMapper userNoticeMapper;
     private final RedisTemplate<String, Object> redisTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+    private final CommunityScopeResolver scopeResolver;
 
     private DefaultRedisScript<Long> signupRedisScript;
 
@@ -74,12 +76,14 @@ public class ActivityServiceImpl implements ActivityService {
     }
 
     @Override
-    public PageResult<ActivityVo> listActivities(String category, Integer status, Long page, Long size) {
+    public PageResult<ActivityVo> listActivities(String category, Integer status, Long communityId, Long page, Long size) {
         Page<BizActivity> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
 
+        Long communityScope = scopeResolver.resolvePublicScope(communityId);
         Page<BizActivity> result = activityMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizActivity>()
+                        .eq(BizActivity::getCommunityId, communityScope)
                         .eq(category != null && !category.isEmpty(), BizActivity::getCategory, category)
                         .eq(status != null, BizActivity::getStatus, status)
                         .orderByDesc(BizActivity::getCreateTime)
@@ -391,7 +395,7 @@ public class ActivityServiceImpl implements ActivityService {
                 .title(dto.getTitle())
                 .coverImage(dto.getCoverImage())
                 .category(dto.getCategory())
-                .communityId(dto.getCommunityId() != null ? dto.getCommunityId() : 101L)
+                .communityId(scopeResolver.resolveForCreate(dto.getCommunityId()))
                 .location(dto.getLocation())
                 .startTime(dto.getStartTime())
                 .endTime(dto.getEndTime())

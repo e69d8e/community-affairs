@@ -24,15 +24,16 @@ public class MarketPostController {
 
     private final MarketPostService marketPostService;
 
-    @Operation(summary = "公开/居民浏览闲置与互助列表")
+    @Operation(summary = "公开/居民浏览闲置与互助列表 (登录后默认本人小区; 匿名需携带 communityId)")
     @GetMapping("/list")
     public Result<PageResult<MarketPostVo>> listPosts(
             @RequestParam(required = false) Integer postType,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(marketPostService.listPosts(postType, status, keyword, page, size));
+        return Result.success(marketPostService.listPosts(postType, status, keyword, communityId, page, size));
     }
 
     @Operation(summary = "获取帖子详情 (含全部评论与收藏点赞状态)")

@@ -30,6 +30,7 @@ public class SysUser implements Serializable {
     private String role; // ROLE_RESIDENT, etc.
     private Integer status; // 1-正常, 0-停用
     private Integer creditScore; // 互助信用分
+    private Long communityId; // 所属小区ID; NULL=平台级账号(系统管理员)
 
     @TableField(fill = FieldFill.INSERT)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

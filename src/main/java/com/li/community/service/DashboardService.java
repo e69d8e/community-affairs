@@ -5,7 +5,7 @@ import com.li.community.model.vo.ScreenDataVo;
 
 public interface DashboardService {
 
-    DashboardMetricsVo getMetrics();
+    DashboardMetricsVo getMetrics(Long communityId);
 
-    ScreenDataVo getScreenData();
+    ScreenDataVo getScreenData(Long communityId);
 }

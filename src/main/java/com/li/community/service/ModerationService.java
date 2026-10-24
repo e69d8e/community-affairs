@@ -12,6 +12,12 @@ public interface ModerationService {
 
     boolean containsSensitiveWord(String text);
 
+    /** 文本命中需直接拒绝 (action=REJECT) 的敏感词 */
+    boolean containsRejectWord(String text);
+
+    /** 返回需直接拒绝的命中敏感词集合 */
+    Set<String> findRejectWords(String text);
+
     String replaceSensitiveWords(String text);
 
     Set<String> findSensitiveWords(String text);
@@ -26,7 +32,7 @@ public interface ModerationService {
 
     void submitReport(ReportSubmitDto dto);
 
-    PageResult<BizReport> listReports(Integer status, Long page, Long size);
+    PageResult<BizReport> listReports(Integer status, Long communityId, Long page, Long size);
 
     void handleReport(Long reportId, Integer status, String remark);
 }

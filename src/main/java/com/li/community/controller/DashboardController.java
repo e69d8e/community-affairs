@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "09. 数据看板与 16:9 全屏指挥驾驶舱模块")
@@ -20,17 +21,17 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
 
-    @Operation(summary = "管理端工作台首页日常统计卡片指标")
+    @Operation(summary = "管理端工作台首页日常统计卡片指标 (非平台管理员固定本人小区)")
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/dashboard/metrics")
-    public Result<DashboardMetricsVo> getMetrics() {
-        return Result.success(dashboardService.getMetrics());
+    public Result<DashboardMetricsVo> getMetrics(@RequestParam(required = false) Long communityId) {
+        return Result.success(dashboardService.getMetrics(communityId));
     }
 
-    @Operation(summary = "16:9 沉浸式科技感全屏指挥驾驶舱聚合数据包")
+    @Operation(summary = "16:9 沉浸式科技感全屏指挥驾驶舱聚合数据包 (非平台管理员固定本人小区)")
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN')")
     @GetMapping("/screen/data")
-    public Result<ScreenDataVo> getScreenData() {
-        return Result.success(dashboardService.getScreenData());
+    public Result<ScreenDataVo> getScreenData(@RequestParam(required = false) Long communityId) {
+        return Result.success(dashboardService.getScreenData(communityId));
     }
 }

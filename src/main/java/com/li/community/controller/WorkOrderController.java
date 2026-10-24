@@ -41,10 +41,10 @@ public class WorkOrderController {
         return Result.success(workOrderService.getMyOrders(orderType, status, page, size));
     }
 
-    @Operation(summary = "获取工单完整流转详情与轨迹时间轴")
+    @Operation(summary = "获取工单完整流转详情与轨迹时间轴 (支持数字主键或工单编号)")
     @GetMapping("/detail/{id}")
-    public Result<WorkOrderVo> getOrderDetail(@PathVariable Long id) {
-        return Result.success(workOrderService.getOrderDetail(id));
+    public Result<WorkOrderVo> getOrderDetail(@PathVariable String id) {
+        return Result.success(workOrderService.getOrderDetailByIdOrNo(id));
     }
 
     @Operation(summary = "居民对已完工工单进行星级评价结单")
@@ -55,7 +55,7 @@ public class WorkOrderController {
         return Result.success("评价成功，已为您增加5点社区互助信用分！", null);
     }
 
-    @Operation(summary = "管理端分页查询工单列表 (支持多维度检索, 网格员仅可见本人负责楼栋)")
+    @Operation(summary = "管理端分页查询工单列表 (支持多维度检索, 网格员仅可见本人负责楼栋; 非平台管理员强制本小区数据)")
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/admin/list")
     public Result<PageResult<WorkOrderVo>> listAdminOrders(
@@ -63,9 +63,10 @@ public class WorkOrderController {
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) Long buildingId,
             @RequestParam(required = false) Integer isUrgent,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(workOrderService.listAdminOrders(orderType, status, buildingId, isUrgent, page, size));
+        return Result.success(workOrderService.listAdminOrders(orderType, status, buildingId, isUrgent, communityId, page, size));
     }
 
     @Operation(summary = "网格员/物业管理员初审工单 (通过派单/驳回)")
@@ -111,7 +112,9 @@ public class WorkOrderController {
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')")
     @GetMapping("/admin/export")
     @LogOperation(title = "导出工单Excel", businessType = "EXPORT")
-    public void exportOrdersExcel(HttpServletResponse response) {
-        workOrderService.exportOrdersExcel(response);
+    public void exportOrdersExcel(
+            @RequestParam(required = false) Long communityId,
+            HttpServletResponse response) {
+        workOrderService.exportOrdersExcel(communityId, response);
     }
 }

@@ -2,6 +2,7 @@ package com.li.community.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.mapper.*;
 import com.li.community.model.entity.*;
 import com.li.community.model.vo.DashboardMetricsVo;
@@ -13,7 +14,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,52 +35,75 @@ public class DashboardServiceImpl implements DashboardService {
     private final BizHouseMapper houseMapper;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final CommunityScopeResolver scopeResolver;
 
-    // 面板指标短缓存：多请求共享，避免每次 9+ 次 COUNT 全表扫描
-    private static final String METRICS_CACHE_KEY = "community:dashboard:metrics";
-    private static final String SCREEN_CACHE_KEY = "community:dashboard:screen";
+    // 面板指标短缓存：按小区维度分 key，避免多社区之间缓存串数据
+    private static final String METRICS_CACHE_PREFIX = "community:dashboard:metrics:";
+    private static final String SCREEN_CACHE_PREFIX = "community:dashboard:screen:";
     private static final long CACHE_TTL_SECONDS = 60;
 
     @Override
-    public DashboardMetricsVo getMetrics() {
-        DashboardMetricsVo cached = readCache(METRICS_CACHE_KEY, DashboardMetricsVo.class);
+    public DashboardMetricsVo getMetrics(Long communityId) {
+        // 平台管理员不指定小区时返回全局指标(NULL=不过滤); 其余角色强制本人小区
+        Long cid = scopeResolver.resolveAdminScope(communityId);
+        String cacheKey = METRICS_CACHE_PREFIX + (cid != null ? cid : "all");
+
+        DashboardMetricsVo cached = readCache(cacheKey, DashboardMetricsVo.class);
         if (cached != null) {
             return cached;
         }
 
         Long totalResidents = userMapper.selectCount(
-                new LambdaQueryWrapper<SysUser>().eq(SysUser::getStatus, 1)
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getStatus, 1)
+                        .eq(cid != null, SysUser::getCommunityId, cid)
         );
 
         Long pendingOrders = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<BizWorkOrder>().eq(BizWorkOrder::getStatus, 1)
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+                        .eq(BizWorkOrder::getStatus, 1)
         );
 
         Long processingOrders = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<BizWorkOrder>().in(BizWorkOrder::getStatus, 3, 4)
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+                        .in(BizWorkOrder::getStatus, 3, 4)
         );
 
         Long activeActivities = activityMapper.selectCount(
-                new LambdaQueryWrapper<BizActivity>().in(BizActivity::getStatus, 1, 2, 3)
+                new LambdaQueryWrapper<BizActivity>()
+                        .eq(cid != null, BizActivity::getCommunityId, cid)
+                        .in(BizActivity::getStatus, 1, 2, 3)
         );
 
         Long openReports = reportMapper.selectCount(
-                new LambdaQueryWrapper<BizReport>().eq(BizReport::getStatus, 0)
+                new LambdaQueryWrapper<BizReport>()
+                        .eq(cid != null, BizReport::getCommunityId, cid)
+                        .eq(BizReport::getStatus, 0)
         );
 
         Long totalNotices = noticeMapper.selectCount(
-                new LambdaQueryWrapper<SysNotice>().eq(SysNotice::getStatus, 1)
+                new LambdaQueryWrapper<SysNotice>()
+                        .eq(cid != null, SysNotice::getCommunityId, cid)
+                        .eq(SysNotice::getStatus, 1)
         );
 
         Long totalCompletedOrders = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<BizWorkOrder>().in(BizWorkOrder::getStatus, 5, 6)
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+                        .in(BizWorkOrder::getStatus, 5, 6)
         );
-        Long totalOrders = workOrderMapper.selectCount(null);
+        Long totalOrders = workOrderMapper.selectCount(
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+        );
         double finishRate = (totalOrders > 0) ? (Math.round((double) totalCompletedOrders / totalOrders * 1000.0) / 10.0) : 100.0;
 
         // 本月新增闲置互助帖（按创建时间当月统计）
         Long monthlyPostCount = marketPostMapper.selectCount(
                 new LambdaQueryWrapper<BizMarketPost>()
+                        .eq(cid != null, BizMarketPost::getCommunityId, cid)
                         .ne(BizMarketPost::getStatus, 4)
                         .ge(BizMarketPost::getCreateTime, LocalDate.now().withDayOfMonth(1).atStartOfDay())
         );
@@ -95,45 +118,66 @@ public class DashboardServiceImpl implements DashboardService {
                 .repairFinishRate(finishRate)
                 .monthlyPostCount(monthlyPostCount)
                 .build();
-        writeCache(METRICS_CACHE_KEY, vo);
+        writeCache(cacheKey, vo);
         return vo;
     }
 
     @Override
-    public ScreenDataVo getScreenData() {
-        ScreenDataVo cached = readCache(SCREEN_CACHE_KEY, ScreenDataVo.class);
+    public ScreenDataVo getScreenData(Long communityId) {
+        // 大屏必须落在具体小区: 平台管理员未指定时回退第一个启用小区, 其余角色强制本人小区
+        Long cid = scopeResolver.resolveAdminScope(communityId);
+        if (cid == null) {
+            BizCommunity first = communityMapper.selectOne(
+                    new LambdaQueryWrapper<BizCommunity>()
+                            .eq(BizCommunity::getStatus, 1)
+                            .orderByAsc(BizCommunity::getId)
+                            .last("LIMIT 1"));
+            cid = first != null ? first.getId() : null;
+        }
+        String cacheKey = SCREEN_CACHE_PREFIX + (cid != null ? cid : "all");
+
+        ScreenDataVo cached = readCache(cacheKey, ScreenDataVo.class);
         if (cached != null) {
             return cached;
         }
 
-        BizCommunity community = communityMapper.selectOne(new LambdaQueryWrapper<BizCommunity>().last("LIMIT 1"));
+        BizCommunity community = cid != null ? communityMapper.selectById(cid) : null;
         String commName = community != null ? community.getName() : "智慧示范社区";
         String commAddress = community != null ? community.getAddress() : "杭州市西湖区文三西路888号";
-        Long communityId = community != null ? community.getId() : 101L;
 
-        Long totalResidents = userMapper.selectCount(new LambdaQueryWrapper<SysUser>().eq(SysUser::getStatus, 1));
-        Long totalBuildings = buildingMapper.selectCount(null);
-        Long totalHouses = houseMapper.selectCount(null);
+        Long totalResidents = userMapper.selectCount(
+                new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getStatus, 1)
+                        .eq(cid != null, SysUser::getCommunityId, cid));
+        Long totalBuildings = buildingMapper.selectCount(
+                new LambdaQueryWrapper<BizBuilding>().eq(cid != null, BizBuilding::getCommunityId, cid));
+        Long totalHouses = houseMapper.selectCount(
+                new LambdaQueryWrapper<BizHouse>().eq(cid != null, BizHouse::getCommunityId, cid));
 
         Long occupiedHouses = houseMapper.selectCount(
-                new LambdaQueryWrapper<BizHouse>().in(BizHouse::getLiveStatus, 1, 2)
+                new LambdaQueryWrapper<BizHouse>()
+                        .eq(cid != null, BizHouse::getCommunityId, cid)
+                        .in(BizHouse::getLiveStatus, 1, 2)
         );
         double occupancyRate = (totalHouses > 0) ? (Math.round((double) occupiedHouses / totalHouses * 1000.0) / 10.0) : 88.5;
 
-        Long totalOrders = workOrderMapper.selectCount(null);
+        Long totalOrders = workOrderMapper.selectCount(
+                new LambdaQueryWrapper<BizWorkOrder>().eq(cid != null, BizWorkOrder::getCommunityId, cid));
         Long completedOrders = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<BizWorkOrder>().in(BizWorkOrder::getStatus, 5, 6)
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+                        .in(BizWorkOrder::getStatus, 5, 6)
         );
         double finishRate = (totalOrders > 0) ? (Math.round((double) completedOrders / totalOrders * 1000.0) / 10.0) : 95.8;
 
         // 1. 楼栋报修热力统计
-        List<Map<String, Object>> buildingHeatmap = workOrderMapper.countByBuilding(communityId);
+        List<Map<String, Object>> buildingHeatmap = workOrderMapper.countByBuilding(cid);
 
         // 2. 工单流转漏斗（按状态真实统计，不再用总数减常数伪造）
-        long reviewed = countOrdersByStatus(3, 4, 5, 6);
-        long handling = countOrdersByStatus(4, 5, 6);
-        long finished = countOrdersByStatus(5, 6);
-        long evaluated = countOrdersByStatus(6);
+        long reviewed = countOrdersByStatus(cid, 3, 4, 5, 6);
+        long handling = countOrdersByStatus(cid, 4, 5, 6);
+        long finished = countOrdersByStatus(cid, 5, 6);
+        long evaluated = countOrdersByStatus(cid, 6);
         List<Map<String, Object>> orderFunnel = List.of(
                 Map.of("name", "居民申报提交", "value", totalOrders),
                 Map.of("name", "初审派单通过", "value", reviewed),
@@ -143,10 +187,10 @@ public class DashboardServiceImpl implements DashboardService {
         );
 
         // 3. 问题分类环图
-        List<Map<String, Object>> categoryPie = workOrderMapper.countByCategory(communityId);
+        List<Map<String, Object>> categoryPie = workOrderMapper.countByCategory(cid);
 
         // 4. 闲置与互助分布（查询闲置互助帖表而非工单表）
-        List<Map<String, Object>> marketPostStats = marketPostMapper.countByPostType(communityId);
+        List<Map<String, Object>> marketPostStats = marketPostMapper.countByPostType(cid);
 
         // 5. 活动雷达指标
         List<ScreenDataVo.RadarIndicatorVo> activityRadar = List.of(
@@ -162,7 +206,9 @@ public class DashboardServiceImpl implements DashboardService {
         DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
 
         List<SysNotice> recentNotices = noticeMapper.selectList(
-                new LambdaQueryWrapper<SysNotice>().orderByDesc(SysNotice::getCreateTime).last("LIMIT 3")
+                new LambdaQueryWrapper<SysNotice>()
+                        .eq(cid != null, SysNotice::getCommunityId, cid)
+                        .orderByDesc(SysNotice::getCreateTime).last("LIMIT 3")
         );
         for (SysNotice n : recentNotices) {
             liveEventStream.add(ScreenDataVo.EventStreamVo.builder()
@@ -174,7 +220,9 @@ public class DashboardServiceImpl implements DashboardService {
         }
 
         List<BizWorkOrder> recentOrders = workOrderMapper.selectList(
-                new LambdaQueryWrapper<BizWorkOrder>().orderByDesc(BizWorkOrder::getCreateTime).last("LIMIT 4")
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+                        .orderByDesc(BizWorkOrder::getCreateTime).last("LIMIT 4")
         );
         for (BizWorkOrder o : recentOrders) {
             liveEventStream.add(ScreenDataVo.EventStreamVo.builder()
@@ -203,13 +251,15 @@ public class DashboardServiceImpl implements DashboardService {
                 .activityRadar(activityRadar)
                 .liveEventStream(liveEventStream)
                 .build();
-        writeCache(SCREEN_CACHE_KEY, vo);
+        writeCache(cacheKey, vo);
         return vo;
     }
 
-    private long countOrdersByStatus(Integer... statuses) {
+    private long countOrdersByStatus(Long cid, Integer... statuses) {
         Long count = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<BizWorkOrder>().in(BizWorkOrder::getStatus, List.of(statuses)));
+                new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(cid != null, BizWorkOrder::getCommunityId, cid)
+                        .in(BizWorkOrder::getStatus, List.of(statuses)));
         return count != null ? count : 0;
     }
 

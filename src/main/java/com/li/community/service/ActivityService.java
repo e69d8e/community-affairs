@@ -12,7 +12,7 @@ import java.util.List;
 
 public interface ActivityService {
 
-    PageResult<ActivityVo> listActivities(String category, Integer status, Long page, Long size);
+    PageResult<ActivityVo> listActivities(String category, Integer status, Long communityId, Long page, Long size);
 
     ActivityVo getActivityDetail(Long activityId);
 

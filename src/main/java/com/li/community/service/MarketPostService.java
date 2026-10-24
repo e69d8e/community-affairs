@@ -8,7 +8,7 @@ import com.li.community.model.vo.MarketPostVo;
 
 public interface MarketPostService {
 
-    PageResult<MarketPostVo> listPosts(Integer postType, Integer status, String keyword, Long page, Long size);
+    PageResult<MarketPostVo> listPosts(Integer postType, Integer status, String keyword, Long communityId, Long page, Long size);
 
     MarketPostVo getPostDetail(Long postId);
 

@@ -1,6 +1,7 @@
 package com.li.community.model.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
@@ -20,4 +21,7 @@ public class AuthRegisterDto {
     @NotBlank(message = "手机号码不能为空")
     @Pattern(regexp = "^1[3-9]\\d{9}$", message = "请输入有效的11位手机号码")
     private String phone;
+
+    @NotNull(message = "请选择要加入的小区")
+    private Long communityId;
 }

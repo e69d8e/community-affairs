@@ -11,6 +11,7 @@ import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.constant.RoleConstant;
 import com.li.community.common.result.PageResult;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.*;
 import com.li.community.model.dto.*;
@@ -50,6 +51,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     private final BizHouseMapper houseMapper;
     private final SysUserNoticeMapper userNoticeMapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final CommunityScopeResolver scopeResolver;
 
     // 可查看任意工单详情的工作人员角色；网格员另受"仅本人负责楼栋"的数据范围约束
     private static final Set<String> ADMIN_ROLES = Set.of(
@@ -70,7 +72,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
                 .orderNo(orderNo)
                 .orderType(dto.getOrderType())
                 .category(dto.getCategory())
-                .communityId(dto.getCommunityId() != null ? dto.getCommunityId() : 101L)
+                .communityId(scopeResolver.resolveForCreate(dto.getCommunityId()))
                 .buildingId(dto.getBuildingId())
                 .houseId(dto.getHouseId())
                 .reporterId(userId)
@@ -131,7 +133,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
             throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
         }
         // 工单含报修人手机号、住址等隐私，仅报修人、处理人及管理角色可查看；
-        // 网格员作为管理角色还需在数据范围内(仅本人负责楼栋)
+        // 网格员作为管理角色还需在数据范围内(仅本人负责楼栋)，管理角色还需在本人小区范围内
         boolean involved = userId.equals(order.getReporterId())
                 || (order.getHandlerId() != null && userId.equals(order.getHandlerId()));
         if (!involved && !isAdminUser()) {
@@ -140,6 +142,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         if (!involved && !isInOfficerBuildingScope(order.getBuildingId())) {
             throw new BizException(ErrorCode.WORK_ORDER_PERMISSION_DENIED);
         }
+        requireOrderInCommunity(order);
         WorkOrderVo vo = convertToVo(order);
 
         // 查出流转轨迹
@@ -151,6 +154,23 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         vo.setLogs(logs);
 
         return vo;
+    }
+
+    @Override
+    public WorkOrderVo getOrderDetailByIdOrNo(String idOrNo) {
+        if (idOrNo != null && idOrNo.matches("\\d+")) {
+            try {
+                return getOrderDetail(Long.parseLong(idOrNo));
+            } catch (NumberFormatException e) {
+                throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
+            }
+        }
+        BizWorkOrder order = workOrderMapper.selectOne(
+                new LambdaQueryWrapper<BizWorkOrder>().eq(BizWorkOrder::getOrderNo, idOrNo));
+        if (order == null) {
+            throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
+        }
+        return getOrderDetail(order.getId());
     }
 
     @Override
@@ -193,8 +213,11 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     }
 
     @Override
-    public PageResult<WorkOrderVo> listAdminOrders(Integer orderType, Integer status, Long buildingId, Integer isUrgent, Long page, Long size) {
+    public PageResult<WorkOrderVo> listAdminOrders(Integer orderType, Integer status, Long buildingId, Integer isUrgent, Long communityId, Long page, Long size) {
         Page<BizWorkOrder> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
+
+        // 社区数据范围: 平台管理员可指定/查看全局, 其余角色强制本小区
+        Long communityScope = scopeResolver.resolveAdminScope(communityId);
 
         // 网格员数据范围：仅可见本人负责楼栋的工单
         List<Long> officerScope = null;
@@ -208,6 +231,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         Page<BizWorkOrder> result = workOrderMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizWorkOrder>()
+                        .eq(communityScope != null, BizWorkOrder::getCommunityId, communityScope)
                         .eq(orderType != null, BizWorkOrder::getOrderType, orderType)
                         .eq(status != null, BizWorkOrder::getStatus, status)
                         .eq(buildingId != null, BizWorkOrder::getBuildingId, buildingId)
@@ -231,6 +255,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         if (order == null) {
             throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
         }
+        requireOrderInCommunity(order);
         if (!isInOfficerBuildingScope(order.getBuildingId())) {
             throw new BizException(ErrorCode.WORK_ORDER_PERMISSION_DENIED);
         }
@@ -274,6 +299,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     public void dispatchOrder(Long orderId, Long handlerId, String handlerName, String handlerPhone) {
         BizWorkOrder order = workOrderMapper.selectById(orderId);
         if (order == null) throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
+        requireOrderInCommunity(order);
         if (order.getStatus() != 1 && order.getStatus() != 3) {
             throw new BizException(ErrorCode.WORK_ORDER_STATUS_ERROR, "仅待审核或已派单状态的工单可(重新)派单");
         }
@@ -305,6 +331,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     public void startHandle(Long orderId) {
         BizWorkOrder order = workOrderMapper.selectById(orderId);
         if (order == null) throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
+        requireOrderInCommunity(order);
         if (order.getStatus() != 3) {
             throw new BizException(ErrorCode.WORK_ORDER_STATUS_ERROR, "仅已派单工单可开工处理");
         }
@@ -333,6 +360,7 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     public void completeOrder(WorkOrderHandleDto dto) {
         BizWorkOrder order = workOrderMapper.selectById(dto.getOrderId());
         if (order == null) throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
+        requireOrderInCommunity(order);
         if (order.getStatus() != 4) {
             throw new BizException(ErrorCode.WORK_ORDER_STATUS_ERROR, "仅处理中工单可标记完工");
         }
@@ -361,15 +389,19 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     }
 
     @Override
-    public void exportOrdersExcel(HttpServletResponse response) {
+    public void exportOrdersExcel(Long communityId, HttpServletResponse response) {
         try {
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("utf-8");
             String fileName = URLEncoder.encode("社区工单报修记录表_" + DateUtil.format(new Date(), "yyyyMMddHHmmss"), StandardCharsets.UTF_8).replaceAll("\\+", "%20");
             response.setHeader("Content-disposition", "attachment;filename*=utf-8''" + fileName + ".xlsx");
 
+            // 与管理端列表一致的社区数据范围
+            Long communityScope = scopeResolver.resolveAdminScope(communityId);
             List<BizWorkOrder> list = workOrderMapper.selectList(
-                    new LambdaQueryWrapper<BizWorkOrder>().orderByDesc(BizWorkOrder::getCreateTime)
+                    new LambdaQueryWrapper<BizWorkOrder>()
+                            .eq(communityScope != null, BizWorkOrder::getCommunityId, communityScope)
+                            .orderByDesc(BizWorkOrder::getCreateTime)
             );
 
             List<OrderExcelModel> excelList = list.stream().map(o -> OrderExcelModel.builder()
@@ -446,6 +478,15 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     private boolean isAdminUser() {
         String role = SecurityUtils.getRole();
         return role != null && ADMIN_ROLES.contains(role);
+    }
+
+    /**
+     * 社区越权校验: 非平台管理角色只能触达本人所属小区的工单
+     */
+    private void requireOrderInCommunity(BizWorkOrder order) {
+        if (!scopeResolver.isInScope(order.getCommunityId())) {
+            throw new BizException(ErrorCode.WORK_ORDER_PERMISSION_DENIED);
+        }
     }
 
     /**

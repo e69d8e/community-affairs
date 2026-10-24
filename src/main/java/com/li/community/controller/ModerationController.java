@@ -32,14 +32,15 @@ public class ModerationController {
         return Result.success("举报已受理，网格员将尽快核实处理", null);
     }
 
-    @Operation(summary = "管理端获取举报处理工单列表")
+    @Operation(summary = "管理端获取举报处理工单列表 (非平台管理员仅本人小区数据)")
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/admin/report/list")
     public Result<PageResult<BizReport>> listReports(
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(moderationService.listReports(status, page, size));
+        return Result.success(moderationService.listReports(status, communityId, page, size));
     }
 
     @Operation(summary = "网格员/管理员核查举报并做出裁决 (下架/驳回)")

@@ -38,15 +38,16 @@ public class UserController {
         return Result.success("密码修改成功，请重新登录", null);
     }
 
-    @Operation(summary = "系统管理员查询用户列表")
+    @Operation(summary = "系统管理员查询用户列表 (支持按小区过滤, 不传小区查全部)")
     @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @GetMapping("/admin/list")
     public Result<PageResult<UserVo>> listUsers(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String role,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(userService.listUsers(keyword, role, page, size));
+        return Result.success(userService.listUsers(keyword, role, communityId, page, size));
     }
 
     @Operation(summary = "系统管理员启用/停用用户账号")

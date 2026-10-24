@@ -56,20 +56,30 @@ public class DatabaseInitializer implements ApplicationRunner {
             safeExecute("ALTER TABLE `biz_activity_signup` ADD UNIQUE KEY `uk_verify_code` (`verify_code`)");
             safeExecute("ALTER TABLE `biz_activity_signup` ADD UNIQUE KEY `uk_activity_user` (`activity_id`, `user_id`)");
             safeExecute("ALTER TABLE `biz_post_favorite` ADD UNIQUE KEY `uk_user_post` (`user_id`, `post_id`)");
+
+            // 4. 多社区(多租户)改造: 为存量数据卷幂等补充 community_id 列与索引
+            safeExecute("ALTER TABLE `sys_user` ADD COLUMN `community_id` BIGINT DEFAULT NULL COMMENT '所属小区ID(NULL=平台级账号,如系统管理员)' AFTER `credit_score`");
+            safeExecute("ALTER TABLE `sys_user` ADD KEY `idx_user_community` (`community_id`)");
+            safeExecute("ALTER TABLE `biz_report` ADD COLUMN `community_id` BIGINT DEFAULT NULL COMMENT '举报人所属小区ID(冗余,用于社区隔离)' AFTER `reporter_id`");
+            safeExecute("ALTER TABLE `biz_report` ADD KEY `idx_report_community` (`community_id`)");
+
+            // 5. 存量数据回填: 升级前所有数据均属于首个小区(101), 平台级 admin 账号保持 NULL
+            safeExecute("UPDATE `sys_user` SET `community_id` = 101 WHERE `community_id` IS NULL AND `username` <> 'admin'");
+            safeExecute("UPDATE `biz_report` SET `community_id` = 101 WHERE `community_id` IS NULL");
         } catch (Exception e) {
             log.error("自动初始化数据库表结构异常: {}", e.getMessage(), e);
         }
     }
 
     /**
-     * 执行 DDL，索引已存在或历史数据存在重复值导致失败时仅记录日志，不阻断启动
+     * 执行 DDL/DML，列或索引已存在、无匹配行时仅记录日志，不阻断启动
      */
-    private void safeExecute(String ddl) {
+    private void safeExecute(String sql) {
         try {
-            jdbcTemplate.execute(ddl);
-            log.info("数据库索引初始化成功: {}", ddl);
+            jdbcTemplate.execute(sql);
+            log.info("数据库结构/数据初始化成功: {}", sql);
         } catch (Exception e) {
-            log.info("数据库索引初始化跳过（可能已存在或数据重复）: {} -> {}", ddl, e.getMessage());
+            log.info("数据库结构/数据初始化跳过（可能已存在）: {} -> {}", sql, e.getMessage());
         }
     }
 }

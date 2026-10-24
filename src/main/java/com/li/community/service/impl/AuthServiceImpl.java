@@ -6,6 +6,7 @@ import com.li.community.common.constant.RedisKeyConstant;
 import com.li.community.common.constant.RoleConstant;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
+import com.li.community.common.security.CommunityScopeResolver;
 import com.li.community.common.utils.JwtUtils;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.*;
@@ -42,6 +43,7 @@ public class AuthServiceImpl implements AuthService {
     private final BizBuildingMapper buildingMapper;
     private final BizUnitMapper unitMapper;
     private final BizCommunityMapper communityMapper;
+    private final CommunityScopeResolver scopeResolver;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -80,19 +82,9 @@ public class AuthServiceImpl implements AuthService {
             throw new BizException(ErrorCode.USER_DISABLED);
         }
 
-        String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole());
+        String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole(), user.getCommunityId());
 
-        return LoginVo.builder()
-                .token(token)
-                .id(user.getId())
-                .username(user.getUsername())
-                .realName(user.getRealName())
-                .phone(user.getPhone())
-                .avatar(user.getAvatar())
-                .gender(user.getGender())
-                .role(user.getRole())
-                .creditScore(user.getCreditScore())
-                .build();
+        return buildLoginVo(user, token);
     }
 
     @Override
@@ -114,6 +106,9 @@ public class AuthServiceImpl implements AuthService {
             throw new BizException(ErrorCode.PHONE_ALREADY_EXISTS);
         }
 
+        // 校验所选小区存在且启用
+        scopeResolver.requireActiveCommunity(dto.getCommunityId());
+
         long userId = IdUtil.getSnowflakeNextId();
         SysUser user = SysUser.builder()
                 .id(userId)
@@ -126,6 +121,7 @@ public class AuthServiceImpl implements AuthService {
                 .role(RoleConstant.ROLE_RESIDENT)
                 .status(1)
                 .creditScore(100)
+                .communityId(dto.getCommunityId())
                 .build();
 
         userMapper.insert(user);
@@ -142,8 +138,20 @@ public class AuthServiceImpl implements AuthService {
                     .build());
         }
 
-        String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole());
+        String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole(), user.getCommunityId());
 
+        return buildLoginVo(user, token);
+    }
+
+    /**
+     * 组装登录/注册返回信息, 附带用户所属小区上下文
+     */
+    private LoginVo buildLoginVo(SysUser user, String token) {
+        String communityName = null;
+        if (user.getCommunityId() != null) {
+            BizCommunity community = communityMapper.selectById(user.getCommunityId());
+            communityName = community != null ? community.getName() : null;
+        }
         return LoginVo.builder()
                 .token(token)
                 .id(user.getId())
@@ -154,7 +162,18 @@ public class AuthServiceImpl implements AuthService {
                 .gender(user.getGender())
                 .role(user.getRole())
                 .creditScore(user.getCreditScore())
+                .communityId(user.getCommunityId())
+                .communityName(communityName)
                 .build();
+    }
+
+    @Override
+    public List<BizCommunity> listActiveCommunities() {
+        return communityMapper.selectList(
+                new LambdaQueryWrapper<BizCommunity>()
+                        .eq(BizCommunity::getStatus, 1)
+                        .orderByAsc(BizCommunity::getId)
+        );
     }
 
     @Override
@@ -221,7 +240,17 @@ public class AuthServiceImpl implements AuthService {
                 .status(user.getStatus())
                 .creditScore(user.getCreditScore())
                 .createTime(user.getCreateTime())
+                .communityId(user.getCommunityId())
+                .communityName(resolveCommunityName(user.getCommunityId()))
                 .boundHouses(houseList)
                 .build();
+    }
+
+    private String resolveCommunityName(Long communityId) {
+        if (communityId == null) {
+            return null;
+        }
+        BizCommunity community = communityMapper.selectById(communityId);
+        return community != null ? community.getName() : null;
     }
 }

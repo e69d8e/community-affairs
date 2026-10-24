@@ -29,6 +29,9 @@ public class BizReport implements Serializable {
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long reporterId;
 
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long communityId; // 举报人所属小区ID(冗余,用于社区隔离)
+
     private String reasonCategory;
     private String description;
     private String evidenceImages;
