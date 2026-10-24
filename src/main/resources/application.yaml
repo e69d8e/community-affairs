@@ -1,0 +1,87 @@
+server:
+  port: 8082
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: community-affairs
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/community_affairs?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 30000
+      pool-name: CommunityHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+      database: 0
+      timeout: 5000ms
+
+  elasticsearch:
+    uris: ${ES_URIS:http://127.0.0.1:9200}
+    connection-timeout: 5s
+    socket-timeout: 10s
+
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 50MB
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    # 生产环境勿开启 SQL 全量打印（含手机号等参数）；本地排查时再临时打开
+    # log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# MinIO 对象存储配置
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  bucket-name: community-files
+
+# JWT 鉴权配置
+# 生产必须通过环境变量 JWT_SECRET 提供密钥（不少于 32 字节随机串，如 openssl rand -base64 48 生成），
+# 未设置时应用启动即失败，避免各部署共用同一硬编码密钥
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 604800000 # 7天 (毫秒)
+  header: Authorization
+  token-prefix: "Bearer "
+
+# Knife4j API 文档（生产环境应设为 false 并在 SecurityConfig 移除放行）
+knife4j:
+  enable: true
+  openapi:
+    title: 社区综合事务管理系统 API 文档
+    description: 面向普通居民、网格员、物业管理员、社区管理员、系统管理员的业务接口文档
+    version: 1.0.0
+    group:
+      default:
+        group-name: 全部业务接口
+        api-rule: package
+        api-rule-resources:
+          - com.li.community.controller
+
+# 日志配置
+logging:
+  level:
+    com.li.community: info
+    org.springframework.security: info
