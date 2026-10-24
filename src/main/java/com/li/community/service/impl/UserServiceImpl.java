@@ -3,6 +3,7 @@ package com.li.community.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.li.community.common.constant.RedisKeyConstant;
+import com.li.community.common.constant.RoleConstant;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.result.PageResult;
@@ -19,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -122,6 +124,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void updateUserRole(Long userId, String role) {
+        // 只允许在系统既定的五种角色间分配，防止写入任意脏值
+        Set<String> validRoles = Set.of(
+                RoleConstant.ROLE_SYSTEM_ADMIN, RoleConstant.ROLE_COMMUNITY_ADMIN,
+                RoleConstant.ROLE_PROPERTY_ADMIN, RoleConstant.ROLE_GRID_OFFICER,
+                RoleConstant.ROLE_RESIDENT);
+        if (role == null || !validRoles.contains(role)) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "非法的角色编码: " + role);
+        }
         SysUser user = userMapper.selectById(userId);
         if (user == null) throw new BizException(ErrorCode.USER_NOT_FOUND);
 

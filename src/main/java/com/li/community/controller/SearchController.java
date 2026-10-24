@@ -7,6 +7,7 @@ import com.li.community.service.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,6 +31,7 @@ public class SearchController {
     }
 
     @Operation(summary = "管理员手动触发全量数据重新同步至 Elasticsearch")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @PostMapping("/admin/sync-all")
     public Result<Void> syncAll() {
         searchService.syncAllToEs();

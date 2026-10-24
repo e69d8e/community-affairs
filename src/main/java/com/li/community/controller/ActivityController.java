@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -64,6 +65,7 @@ public class ActivityController {
     }
 
     @Operation(summary = "现场网格员/管理员扫码或输码核销签到")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'GRID_OFFICER')")
     @PostMapping("/admin/verify")
     @LogOperation(title = "活动签到核销", businessType = "UPDATE")
     public Result<BizActivitySignup> verifySignup(@Valid @RequestBody ActivityVerifyDto dto) {
@@ -71,6 +73,7 @@ public class ActivityController {
     }
 
     @Operation(summary = "发布新社区文体公益活动")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN')")
     @PostMapping("/admin/create")
     @LogOperation(title = "发布社区活动", businessType = "INSERT")
     public Result<BizActivity> createActivity(@Valid @RequestBody ActivityCreateDto dto) {
@@ -78,6 +81,7 @@ public class ActivityController {
     }
 
     @Operation(summary = "管理员更新活动状态 (取消/完结)")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN')")
     @PutMapping("/admin/status")
     public Result<Void> updateActivityStatus(@RequestBody Map<String, Object> params) {
         Long activityId = Long.parseLong(params.get("activityId").toString());
@@ -87,6 +91,7 @@ public class ActivityController {
     }
 
     @Operation(summary = "导出活动已报名居民花名册 Excel")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN')")
     @GetMapping("/admin/export/{activityId}")
     @LogOperation(title = "导出活动花名册", businessType = "EXPORT")
     public void exportSignupsExcel(@PathVariable Long activityId, HttpServletResponse response) {

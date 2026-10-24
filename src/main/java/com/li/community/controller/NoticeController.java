@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "07. 社区公告、通知与实时消息中心")
@@ -37,6 +38,7 @@ public class NoticeController {
     }
 
     @Operation(summary = "管理端发布公告 (若为应急预警则瞬时全区 WebSocket 广播)")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')")
     @PostMapping("/admin/publish")
     @LogOperation(title = "发布通知通告", businessType = "INSERT", saveParam = true)
     public Result<SysNotice> publishNotice(@Valid @RequestBody NoticeCreateDto dto) {

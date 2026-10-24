@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -32,6 +33,7 @@ public class ModerationController {
     }
 
     @Operation(summary = "管理端获取举报处理工单列表")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/admin/report/list")
     public Result<PageResult<BizReport>> listReports(
             @RequestParam(required = false) Integer status,
@@ -41,6 +43,7 @@ public class ModerationController {
     }
 
     @Operation(summary = "网格员/管理员核查举报并做出裁决 (下架/驳回)")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'GRID_OFFICER')")
     @PutMapping("/admin/report/handle")
     @LogOperation(title = "举报裁决处理", businessType = "AUDIT")
     public Result<Void> handleReport(@RequestBody Map<String, Object> params) {
@@ -52,6 +55,7 @@ public class ModerationController {
     }
 
     @Operation(summary = "系统管理员查询敏感词库")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @GetMapping("/admin/word/list")
     public Result<PageResult<BizSensitiveWord>> listWords(
             @RequestParam(required = false) String keyword,
@@ -61,6 +65,7 @@ public class ModerationController {
     }
 
     @Operation(summary = "系统管理员添加或编辑敏感词")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @PostMapping("/admin/word/save")
     @LogOperation(title = "维护敏感词库", businessType = "INSERT")
     public Result<Void> saveWord(@Valid @RequestBody SensitiveWordDto dto) {
@@ -69,6 +74,7 @@ public class ModerationController {
     }
 
     @Operation(summary = "系统管理员删除敏感词")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @DeleteMapping("/admin/word/delete/{id}")
     @LogOperation(title = "删除敏感词", businessType = "DELETE")
     public Result<Void> deleteWord(@PathVariable Long id) {

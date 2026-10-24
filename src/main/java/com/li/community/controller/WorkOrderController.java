@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -54,7 +55,8 @@ public class WorkOrderController {
         return Result.success("评价成功，已为您增加5点社区互助信用分！", null);
     }
 
-    @Operation(summary = "管理端分页查询工单列表 (支持多维度检索)")
+    @Operation(summary = "管理端分页查询工单列表 (支持多维度检索, 网格员仅可见本人负责楼栋)")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/admin/list")
     public Result<PageResult<WorkOrderVo>> listAdminOrders(
             @RequestParam(required = false) Integer orderType,
@@ -67,6 +69,7 @@ public class WorkOrderController {
     }
 
     @Operation(summary = "网格员/物业管理员初审工单 (通过派单/驳回)")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @PutMapping("/admin/audit")
     @LogOperation(title = "工单初审", businessType = "AUDIT")
     public Result<Void> auditOrder(@Valid @RequestBody WorkOrderAuditDto dto) {
@@ -75,6 +78,7 @@ public class WorkOrderController {
     }
 
     @Operation(summary = "物业管理员指派/改派维修人员")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'PROPERTY_ADMIN')")
     @PutMapping("/admin/dispatch")
     @LogOperation(title = "工单指派派单", businessType = "DISPATCH")
     public Result<Void> dispatchOrder(@RequestBody Map<String, Object> params) {
@@ -87,6 +91,7 @@ public class WorkOrderController {
     }
 
     @Operation(summary = "处理师傅接单开工")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'PROPERTY_ADMIN')")
     @PutMapping("/admin/start")
     public Result<Void> startHandle(@RequestParam Long orderId) {
         workOrderService.startHandle(orderId);
@@ -94,6 +99,7 @@ public class WorkOrderController {
     }
 
     @Operation(summary = "处理师傅完工反馈并上传现场凭证")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'PROPERTY_ADMIN')")
     @PutMapping("/admin/complete")
     @LogOperation(title = "工单完工登记", businessType = "UPDATE")
     public Result<Void> completeOrder(@Valid @RequestBody WorkOrderHandleDto dto) {
@@ -102,6 +108,7 @@ public class WorkOrderController {
     }
 
     @Operation(summary = "导出工单报修记录 Excel 表格")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')")
     @GetMapping("/admin/export")
     @LogOperation(title = "导出工单Excel", businessType = "EXPORT")
     public void exportOrdersExcel(HttpServletResponse response) {

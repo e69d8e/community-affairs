@@ -9,6 +9,7 @@ import com.li.community.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -38,6 +39,7 @@ public class UserController {
     }
 
     @Operation(summary = "系统管理员查询用户列表")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @GetMapping("/admin/list")
     public Result<PageResult<UserVo>> listUsers(
             @RequestParam(required = false) String keyword,
@@ -48,6 +50,7 @@ public class UserController {
     }
 
     @Operation(summary = "系统管理员启用/停用用户账号")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @PutMapping("/admin/status")
     @LogOperation(title = "用户状态变更", businessType = "UPDATE")
     public Result<Void> updateUserStatus(@RequestBody Map<String, Object> params) {
@@ -58,6 +61,7 @@ public class UserController {
     }
 
     @Operation(summary = "系统管理员分配用户角色")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     @PutMapping("/admin/role")
     @LogOperation(title = "用户角色分配", businessType = "UPDATE")
     public Result<Void> updateUserRole(@RequestBody Map<String, Object> params) {

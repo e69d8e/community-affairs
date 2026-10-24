@@ -8,6 +8,7 @@ import com.li.community.service.GridService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -61,7 +62,8 @@ public class GridController {
         return Result.success("房屋认证申请已提交，请等待网格员或物业审核", null);
     }
 
-    @Operation(summary = "管理端获取待审核房屋绑定申请")
+    @Operation(summary = "管理端获取待审核房屋绑定申请 (网格员仅可见本人负责楼栋)")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/admin/house-bind/list")
     public Result<PageResult<BizResidentHouse>> listPendingHouseBindings(
             @RequestParam(defaultValue = "1") Long page,
@@ -70,6 +72,7 @@ public class GridController {
     }
 
     @Operation(summary = "网格员/管理员审批房屋绑定申请")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @PutMapping("/admin/house-bind/audit")
     public Result<Void> auditHouseBinding(@RequestBody Map<String, Object> params) {
         Long bindingId = Long.parseLong(params.get("bindingId").toString());

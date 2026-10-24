@@ -73,6 +73,8 @@ public class SecurityConfig {
                                 "/api/market/list", "/api/market/detail/**"
                         ).permitAll()
                         // 管理端专属接口：各模块均为 /api/{module}/admin/**，仪表盘为 /api/admin/**
+                        // 此处仅为兜底粗粒度闸门(挡住居民访问)；各接口的精确角色分工
+                        // (系统/社区/物业/网格员)以控制器方法上的 @PreAuthorize 注解为准
                         .requestMatchers("/api/admin/**", "/api/*/admin/**")
                         .hasAnyRole("SYSTEM_ADMIN", "COMMUNITY_ADMIN", "PROPERTY_ADMIN", "GRID_OFFICER")
                         // 其余所有请求需携带有效 Token

@@ -3,6 +3,7 @@ package com.li.community.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.li.community.common.constant.RoleConstant;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import com.li.community.common.result.PageResult;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -128,6 +130,11 @@ public class GridServiceImpl implements GridService {
         if (binding == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "绑定记录不存在");
         }
+        // 网格员数据范围：仅可审批本人负责楼栋下房屋的绑定申请
+        if (SecurityUtils.hasRole(RoleConstant.ROLE_GRID_OFFICER)
+                && !currentOfficerHouseIds().contains(binding.getHouseId())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "该房屋不在您负责的楼栋范围内，无法审批");
+        }
 
         binding.setCertStatus(certStatus);
         binding.setRejectReason(rejectReason != null ? rejectReason : "");
@@ -140,11 +147,39 @@ public class GridServiceImpl implements GridService {
     @Override
     public PageResult<BizResidentHouse> listPendingHouseBindings(Long page, Long size) {
         Page<BizResidentHouse> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
-        Page<BizResidentHouse> result = residentHouseMapper.selectPage(
-                pageParam,
-                new LambdaQueryWrapper<BizResidentHouse>()
-                        .orderByDesc(BizResidentHouse::getCreateTime)
-        );
+
+        LambdaQueryWrapper<BizResidentHouse> wrapper = new LambdaQueryWrapper<BizResidentHouse>()
+                .orderByDesc(BizResidentHouse::getCreateTime);
+
+        // 网格员数据范围：仅可见本人负责楼栋下房屋的绑定申请
+        if (SecurityUtils.hasRole(RoleConstant.ROLE_GRID_OFFICER)) {
+            List<Long> houseIds = currentOfficerHouseIds();
+            if (houseIds.isEmpty()) {
+                return PageResult.of(new ArrayList<>(), 0L, pageParam.getSize(), pageParam.getCurrent());
+            }
+            wrapper.in(BizResidentHouse::getHouseId, houseIds);
+        }
+
+        Page<BizResidentHouse> result = residentHouseMapper.selectPage(pageParam, wrapper);
         return PageResult.of(result);
+    }
+
+    /**
+     * 当前登录网格员负责楼栋(biz_building.grid_officer_id)下的全部房屋 ID。
+     */
+    private List<Long> currentOfficerHouseIds() {
+        List<Long> buildingIds = buildingMapper.selectList(
+                        new LambdaQueryWrapper<BizBuilding>()
+                                .select(BizBuilding::getId)
+                                .eq(BizBuilding::getGridOfficerId, SecurityUtils.getUserId()))
+                .stream().map(BizBuilding::getId).collect(Collectors.toList());
+        if (buildingIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return houseMapper.selectList(
+                        new LambdaQueryWrapper<BizHouse>()
+                                .select(BizHouse::getId)
+                                .in(BizHouse::getBuildingId, buildingIds))
+                .stream().map(BizHouse::getId).collect(Collectors.toList());
     }
 }

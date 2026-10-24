@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
+import com.li.community.common.constant.RoleConstant;
 import com.li.community.common.result.PageResult;
 import com.li.community.common.utils.SecurityUtils;
 import com.li.community.mapper.*;
@@ -50,8 +51,10 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     private final SysUserNoticeMapper userNoticeMapper;
     private final SimpMessagingTemplate messagingTemplate;
 
+    // 可查看任意工单详情的工作人员角色；网格员另受"仅本人负责楼栋"的数据范围约束
     private static final Set<String> ADMIN_ROLES = Set.of(
-            "ROLE_SYSTEM_ADMIN", "ROLE_COMMUNITY_ADMIN", "ROLE_PROPERTY_ADMIN", "ROLE_GRID_OFFICER");
+            RoleConstant.ROLE_SYSTEM_ADMIN, RoleConstant.ROLE_COMMUNITY_ADMIN,
+            RoleConstant.ROLE_PROPERTY_ADMIN, RoleConstant.ROLE_GRID_OFFICER);
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -127,10 +130,14 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         if (order == null) {
             throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
         }
-        // 工单含报修人手机号、住址等隐私，仅报修人、处理人及管理角色可查看
+        // 工单含报修人手机号、住址等隐私，仅报修人、处理人及管理角色可查看；
+        // 网格员作为管理角色还需在数据范围内(仅本人负责楼栋)
         boolean involved = userId.equals(order.getReporterId())
                 || (order.getHandlerId() != null && userId.equals(order.getHandlerId()));
         if (!involved && !isAdminUser()) {
+            throw new BizException(ErrorCode.WORK_ORDER_PERMISSION_DENIED);
+        }
+        if (!involved && !isInOfficerBuildingScope(order.getBuildingId())) {
             throw new BizException(ErrorCode.WORK_ORDER_PERMISSION_DENIED);
         }
         WorkOrderVo vo = convertToVo(order);
@@ -189,12 +196,22 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     public PageResult<WorkOrderVo> listAdminOrders(Integer orderType, Integer status, Long buildingId, Integer isUrgent, Long page, Long size) {
         Page<BizWorkOrder> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
 
+        // 网格员数据范围：仅可见本人负责楼栋的工单
+        List<Long> officerScope = null;
+        if (SecurityUtils.hasRole(RoleConstant.ROLE_GRID_OFFICER)) {
+            officerScope = currentOfficerBuildingIds();
+            if (officerScope.isEmpty() || (buildingId != null && !officerScope.contains(buildingId))) {
+                return PageResult.of(new ArrayList<>(), 0L, pageParam.getSize(), pageParam.getCurrent());
+            }
+        }
+
         Page<BizWorkOrder> result = workOrderMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizWorkOrder>()
                         .eq(orderType != null, BizWorkOrder::getOrderType, orderType)
                         .eq(status != null, BizWorkOrder::getStatus, status)
                         .eq(buildingId != null, BizWorkOrder::getBuildingId, buildingId)
+                        .in(officerScope != null, BizWorkOrder::getBuildingId, officerScope)
                         .eq(isUrgent != null, BizWorkOrder::getIsUrgent, isUrgent)
                         .orderByDesc(BizWorkOrder::getIsUrgent)
                         .orderByDesc(BizWorkOrder::getCreateTime)
@@ -213,6 +230,9 @@ public class WorkOrderServiceImpl implements WorkOrderService {
         BizWorkOrder order = workOrderMapper.selectById(dto.getOrderId());
         if (order == null) {
             throw new BizException(ErrorCode.WORK_ORDER_NOT_FOUND);
+        }
+        if (!isInOfficerBuildingScope(order.getBuildingId())) {
+            throw new BizException(ErrorCode.WORK_ORDER_PERMISSION_DENIED);
         }
         if (order.getStatus() != 1) {
             throw new BizException(ErrorCode.WORK_ORDER_STATUS_ERROR, "仅待审核状态工单可初审");
@@ -426,6 +446,25 @@ public class WorkOrderServiceImpl implements WorkOrderService {
     private boolean isAdminUser() {
         String role = SecurityUtils.getRole();
         return role != null && ADMIN_ROLES.contains(role);
+    }
+
+    /**
+     * 非网格员角色不受楼栋数据范围限制；网格员仅可触达 biz_building.grid_officer_id
+     * 绑定给本人的楼栋下的数据。
+     */
+    private boolean isInOfficerBuildingScope(Long buildingId) {
+        if (!SecurityUtils.hasRole(RoleConstant.ROLE_GRID_OFFICER)) {
+            return true;
+        }
+        return buildingId != null && currentOfficerBuildingIds().contains(buildingId);
+    }
+
+    private List<Long> currentOfficerBuildingIds() {
+        return buildingMapper.selectList(
+                        new LambdaQueryWrapper<BizBuilding>()
+                                .select(BizBuilding::getId)
+                                .eq(BizBuilding::getGridOfficerId, SecurityUtils.getUserId()))
+                .stream().map(BizBuilding::getId).collect(Collectors.toList());
     }
 
     private WorkOrderVo convertToVo(BizWorkOrder order) {
