@@ -55,7 +55,10 @@ mybatis-plus:
 
 # MinIO 对象存储配置
 minio:
-  endpoint: http://127.0.0.1:9000
+  # 服务端 API 地址（容器化部署时覆盖为 http://ca-minio:9000 内网服务名）
+  endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+  # 浏览器访问文件的公开地址（留空回退 endpoint；跨机/服务器部署需改为 http://<服务器IP>:9000）
+  public-endpoint: ${MINIO_PUBLIC_ENDPOINT:}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY}
   bucket-name: community-files

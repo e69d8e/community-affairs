@@ -1,0 +1,237 @@
+services:
+  # ========== 应用服务 ==========
+  ca-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ca-app:latest
+    container_name: ca-app
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      # Spring Boot 环境变量覆盖 application.yaml 中的地址
+      # 容器间通过服务名通信，而非 127.0.0.1
+      SPRING_DATASOURCE_URL: "jdbc:mysql://ca-mysql:3306/community_affairs?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true"
+      SPRING_DATA_REDIS_HOST: "ca-redis"
+      SPRING_ELASTICSEARCH_URIS: "http://ca-es:9200"
+      # 连接凭证与业务密钥（来自 .env）
+      MYSQL_USER: "root"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?请先复制 .env.example 为 .env 并填写 MYSQL_PASSWORD}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?请先复制 .env.example 为 .env 并填写 REDIS_PASSWORD}"
+      JWT_SECRET: "${JWT_SECRET:?请先复制 .env.example 为 .env 并填写 JWT_SECRET}"
+      # MinIO：endpoint 为容器内网 API 地址，public-endpoint 为浏览器访问文件的宿主机地址
+      MINIO_ENDPOINT: "http://ca-minio:9000"
+      MINIO_PUBLIC_ENDPOINT: "${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:?请先复制 .env.example 为 .env 并填写 MINIO_SECRET_KEY}"
+      # JVM 参数（按容器内存上限百分比自适应堆大小）
+      JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Dfile.encoding=UTF-8 -Djava.security.egd=file:/dev/./urandom"
+    mem_limit: 1g
+    depends_on:
+      ca-mysql:
+        condition: service_healthy
+      ca-redis:
+        condition: service_healthy
+      ca-es:
+        condition: service_healthy
+      ca-minio:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+  # ========== 基础设施服务 ==========
+
+  ca-mysql:
+    image: mysql:8.4.11
+    container_name: ca-mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+08:00
+      --init-connect='SET NAMES utf8mb4'
+    # 仅绑定宿主机回环地址：本地 IDEA 开发模式仍可 127.0.0.1 直连，
+    # 但避免 MySQL/Redis/ES 无认证裸奔公网；远程管理请走 SSH 隧道
+    ports:
+      - "127.0.0.1:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_PASSWORD}"
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 初始化 SQL（首次启动时自动建库 community_affairs + 20 张表 + 种子数据）
+      - ./init/mysql:/docker-entrypoint-initdb.d:ro
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+  ca-redis:
+    image: redis:7.2.16-alpine
+    container_name: ca-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      TZ: Asia/Shanghai
+    command: >
+      sh -c 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru'
+    volumes:
+      - redis-data:/data
+    mem_limit: 320m
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+  ca-es:
+    build:
+      context: ./elasticsearch
+      dockerfile: Dockerfile
+    image: ca-es:9.2.0-ik
+    container_name: ca-es
+    ports:
+      - "127.0.0.1:9200:9200"
+    environment:
+      - discovery.type=single-node
+      # 单节点内网/回环场景关闭认证（与应用 application.yaml 无凭证配置保持一致）
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - TZ=Asia/Shanghai
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+  ca-minio:
+    image: elestio/minio:latest
+    container_name: ca-minio
+    # 9000 API/文件读取端口需对外（浏览器直接读取上传的图片/PDF），控制台 9001 仅回环
+    ports:
+      - "9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ACCESS_KEY:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_SECRET_KEY}"
+      TZ: Asia/Shanghai
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+  # 生产 / 容器全量模式 Nginx（反向代理至 ca-app 容器）
+  ca-nginx:
+    image: nginx:stable-alpine
+    container_name: ca-nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./html:/usr/share/nginx/html  # 宿主机 html 目录（前端打包产物）
+    depends_on:
+      - ca-app
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+  # 本地开发 / IDEA 调试模式 Nginx（反向代理至宿主机 IDEA 运行的 8082 服务）
+  # 不随默认 docker compose up -d 启动，需显式指定服务名拉起
+  ca-nginx-dev:
+    image: nginx:stable-alpine
+    container_name: ca-nginx-dev
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.dev.d:/etc/nginx/conf.d:ro
+      - ./html:/usr/share/nginx/html  # 宿主机 html 目录（前端打包产物）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # 允许容器访问宿主机网络
+    profiles:
+      - dev
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - ca
+    restart: unless-stopped
+
+# ========== 持久化卷 ==========
+# 统一使用明确命名的命名卷：既可复用已有历史数据，又能在新环境部署时自动创建
+volumes:
+  mysql-data:
+    name: ca-mysql-data
+  redis-data:
+    name: ca-redis-data
+  es-data:
+    name: ca-es-data
+  minio-data:
+    name: ca-minio-data
+
+# ========== 网络 ==========
+networks:
+  ca:
+    driver: bridge

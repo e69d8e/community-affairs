@@ -279,37 +279,258 @@ sequenceDiagram
 
 ---
 
-## 六、 本地环境搭建与服务启动
+## 六、 部署指南与本地环境搭建
 
-### 1. 启动中间件基础设施 (Docker Compose)
-项目依托统一的中间件容器栈，在工作区执行：
+> 本项目已实现 **100% 容器化自动编排**（多阶段分层 Dockerfile + docker-compose 六大服务），并针对全新电脑、云服务器（Linux / macOS / Windows）一键部署进行了自动化适配。克隆代码仓库并配置 `.env` 后执行一条命令即可启动全套服务，**无需在本机安装 JDK / Node.js / MySQL 等任何环境**；同时保留了「容器中间件 + 本地 IDEA」的混合开发模式用于日常断点调试。
+
+| 服务 | 容器名 | 镜像 / 版本 | 宿主机端口 | 职责说明 |
+|---|---|---|---|---|
+| 统一网关 | `ca-nginx` | nginx:stable-alpine | `8080`（对外） | 前端 SPA 静态直出 + API / WebSocket 反向代理 |
+| 后端应用 | `ca-app` | 本仓库 Dockerfile 分层构建 | `8082`（仅回环） | Spring Boot 3.4 核心 服务，非 root 用户运行 |
+| 关系数据库 | `ca-mysql` | mysql:8.4.11 LTS | `3306`（仅回环） | 首次启动自动建库并导入全量 表结构与种子数据 |
+| 分布式缓存 | `ca-redis` | redis:7.2.16-alpine | `6379`（仅回环） | 活动名额 Lua 原子扣减 / JWT 黑名单 / 热搜 ZSet |
+| 全文检索 | `ca-es` | 本地构建（ES 9.2.0 + IK 分词） | `9200`（仅回环） | 公告 / 活动 / 集市中文全文索引 |
+| 对象存储 | `ca-minio` | elestio/minio:latest | `9000`（对外）/ `9001`（回环） | 工单照片 / 完工凭证 / 活动海报存储与浏览器直读 |
+
+### 1. 前置准备
+
+- **Docker 与 Docker Compose**：推荐 Docker Desktop 4.0+ 或 Docker Engine 24.0+（全容器部署**不需要**本机 JDK / Node.js；仅本地混合开发模式需要 JDK 21）。
+- **内存要求**：六容器内存上限合计约 3.7GB（`ca-app` 1g、`ca-es` 1g、`ca-mysql` 768m、`ca-minio` 512m、`ca-redis` 320m、`ca-nginx` 128m），建议宿主机至少 **4GB** 可用内存，推荐 **8GB**。
+- **调整虚拟内存区域限制（满足 Elasticsearch 启动要求）**：
+  - **Linux 服务器**：
+    ```bash
+    sudo sysctl -w vm.max_map_count=262144
+    # 永久生效：
+    echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf && sudo sysctl -p
+    ```
+  - **Windows (Docker Desktop / WSL2)**：在 PowerShell (管理员) 中执行：
+    ```powershell
+    wsl -d docker-desktop sysctl -w vm.max_map_count=262144
+    ```
+- **国内网络加速配置（避免拉取基础镜像时报 `failed to copy: ... EOF` 网络中断）**：打开 Docker Desktop -> ⚙️ Settings -> Docker Engine，在 JSON 配置中加入镜像加速源后点击 Apply & restart：
+  ```json
+  {
+    "registry-mirrors": [
+      "https://docker.m.daocloud.io",
+      "https://docker.1panel.live"
+    ]
+  }
+  ```
+- **云服务器防火墙 / 安全组放行端口**：
+  - `8080`：Nginx 统一门户（前端页面、API 接口、WebSocket、接口文档）
+  - `9000`：MinIO 文件读取（浏览器直读上传的图片 / PDF）
+
+> ℹ️ **安全说明**：MySQL(`3306`) / Redis(`6379`) / Elasticsearch(`9200`) / MinIO 控制台(`9001`) / 后端直连(`8082`) 均已在 `docker-compose.yml` 中绑定 `127.0.0.1` 回环地址，仅宿主机本地可访问，**无需也无法在安全组放行**；如需远程管理请使用 SSH 隧道（例如 `ssh -L 3306:127.0.0.1:3306 user@server`）。对外的 MinIO `9000` 端口仅放行了 `community-files` 桶的匿名**只读 GET**（不含桶枚举），上传与删除仍需 AccessKey 鉴权。
+
+### 2. 部署步骤
+
+#### 步骤 1：克隆代码仓库
 ```bash
-cd /Users/li/Code/dev-databases
-./start.sh
-# 或使用标准命令
-docker compose up -d
+git clone <本仓库地址> community-affairs
+cd community-affairs
 ```
-中间件默认连接信息：
-- **MySQL 8.4**：端口 `3306`，账号 `root`，密码 `123456`，数据库 `community_affairs`
-- **Redis 7.2**：端口 `6379`，密码 `123456`
-- **MinIO S3**：API 端口 `9000`，控制台 `9001`，账号 `minioadmin`，密码 `minioadmin123`
-- **Elasticsearch 9.2**：端口 `9200`，集成 IK 中文分词插件
 
-### 2. 初始化数据库表结构与预置数据
-执行 `/Users/li/Code/dev-databases/init/mysql/community_affairs.sql` 脚本，完成 20 张核心数据表与预置初始数据的导入。
+#### 步骤 2：生成并配置环境变量
+- **Linux / macOS**：
+  ```bash
+  cp .env.example .env
+  vim .env
+  ```
+- **Windows (PowerShell)**：
+  ```powershell
+  Copy-Item .env.example .env
+  notepad .env
+  ```
+- **Windows (CMD)**：
+  ```cmd
+  copy .env.example .env
+  notepad .env
+  ```
 
-### 3. 编译并启动后端服务
+`.env` 核心配置说明（`.env` 已被 gitignore，不会入库）：
+```env
+# ── MySQL（容器编排与后端连接共用）─────────────────────────────
+# ⚠️ 建议 16 位以上字母数字组合；勿含空格、$、引号等特殊字符
+# ⚠️ 密码仅在数据卷首次初始化时写入：首次启动后修改需重建数据卷，详见 FAQ Q2
+MYSQL_PASSWORD=your_mysql_password
+
+# ── Redis ─────────────────────────────────────────────────────
+REDIS_PASSWORD=your_redis_password
+
+# ── MinIO 对象存储 ────────────────────────────────────────────
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=your_minio_secret_key
+
+# ── 浏览器访问上传文件的公开地址（拼接入库的文件 URL）──────────
+# 本地单机保持默认即可；跨机/服务器部署请改为 http://<服务器IP>:9000，
+# 否则其他设备访问时图片显示破图（详见 FAQ Q7）
+MINIO_PUBLIC_ENDPOINT=http://127.0.0.1:9000
+
+# ── JWT 签名密钥（必填，未设置时后端启动即失败）────────────────
+# 生成方式：openssl rand -base64 48；各部署环境必须使用不同密钥
+JWT_SECRET=your_jwt_secret_at_least_32_bytes
+```
+
+#### 步骤 3：前端资源说明（开箱即用，已内置）
+> 💡 **已内置打包产物**：项目代码库中的 `html/` 目录下**已自带完整编译打包好的前端静态资源**（包含 `html/index.html` 与 `html/assets/` 下的全部 JS/CSS 生产文件）。克隆项目后**无需安装 Node.js / pnpm 或执行任何前端构建命令**，启动 Docker 后即可直接通过浏览器访问完整功能的前端页面（前端通过相对路径 `/api` 与 `/ws` 请求同源网关，天然兼容 Nginx 代理部署）。
+
+若后续需要对前端进行二次开发，可前往前端源码工程 `community-affairs-vue`（Vue 3 + Vite + Element Plus + Pinia + ECharts），修改后执行 `pnpm build`，将生成的 `dist/` 产物覆盖至本仓库 `./html/` 目录，浏览器刷新即可生效（无需重启容器）。
+
+#### 步骤 4：一键构建并后台启动所有服务
+- **Linux / macOS**：
+  ```bash
+  DOCKER_BUILDKIT=1 docker compose up -d --build
+  ```
+- **Windows (PowerShell)**：
+  ```powershell
+  $env:DOCKER_BUILDKIT=1; docker compose up -d --build
+  # 或者直接运行（Docker Desktop 默认已启用 BuildKit）：
+  docker compose up -d --build
+  ```
+- **Windows (CMD)**：
+  ```cmd
+  set DOCKER_BUILDKIT=1 && docker compose up -d --build
+  ```
+
+> 💡 **提示**：加上 `--build` 参数会在拉取公共镜像的同时，直接在本地构建 `ca-app`（Maven 多阶段分层构建，依赖层缓存复用）与 `ca-es`（ES 9.2.0 + IK 分词插件），首次构建约需数分钟，之后增量构建为秒级。
+
+#### 步骤 5：查看各服务健康状态
 ```bash
-cd /Users/li/Code/Java/JavaProjects/community-affairs
-# 依赖编译检查
-./mvnw clean compile -DskipTests
+docker compose ps
+```
+所有容器状态显示为 `Up` 或 `healthy` 即表示全套服务就绪（`ca-app` 依赖四个中间件全部 `healthy` 后才会启动）。
 
-# 启动 Spring Boot 服务
+### 3. 访问入口
+
+| 模块 | 访问地址 | 说明 |
+|---|---|---|
+| 🌐 **前端门户**（居民端 / 治理控制台 / 指挥大屏） | `http://<服务器IP>:8080` | Nginx 直出前端 SPA（自动响应路由） |
+| 📖 **Knife4j 交互式接口文档** | `http://<服务器IP>:8080/doc.html` | 五大角色全量接口在线调试控制台 |
+| 🔌 **OpenAPI 3 JSON 描述** | `http://<服务器IP>:8080/v3/api-docs` | 标准化接口描述文件 |
+| 🪣 **MinIO 对象存储控制台** | `http://127.0.0.1:9001`（服务器本机） | 查看上传文件（账号为 `.env` 的 AccessKey / SecretKey） |
+| 🔍 **Elasticsearch** | `http://127.0.0.1:9200`（服务器本机） | 全文索引库（无认证，仅回环） |
+| ⚙️ **后端直连端口** | `http://127.0.0.1:8082`（服务器本机） | 绕过 Nginx 直连调试 |
+
+### 4. 默认演示与测试账号
+
+数据库首次初始化时已自动导入五大角色种子账号（角色权限矩阵详见第五章），密码统一为 `123456`：
+
+| 账号（用户名） | 默认密码 | 角色身份 |
+|---|---|---|
+| `admin` | `123456` | 👑 系统管理员 (ROLE_SYSTEM_ADMIN) |
+| `community_admin` | `123456` | 🏛️ 社区管理员 (ROLE_COMMUNITY_ADMIN) |
+| `property_admin` | `123456` | 🛠️ 物业管理员 (ROLE_PROPERTY_ADMIN) |
+| `grid_officer` | `123456` | 📋 楼栋网格员 (ROLE_GRID_OFFICER) |
+| `resident` | `123456` | 🏡 普通居民 (ROLE_RESIDENT) |
+
+### 5. 本地日常开发模式（混合模式）
+
+日常编码与断点调试时，推荐使用 Docker 运行中间件，在本地 IDE（IntelliJ IDEA）中直接运行 Spring Boot 应用。
+
+本项目内置了**双 Nginx 环境体系**，解决本地 IDEA 运行时 Nginx 无法跨容器转发到宿主机的问题：
+- **`ca-nginx`（全容器化 / 生产模式）**：反代目标为 `ca-app:8082` 容器，默认随 `docker compose up -d` 启动。
+- **`ca-nginx-dev`（本地 IDEA 开发模式）**：反代目标为 `host.docker.internal:8082`（宿主机本地 IDEA 运行的后端），无需修改前端代码或端口，前端页面（`8080`）、API 代理、WebSocket、接口文档均开箱即用。
+
+#### 本地开发标准启动流程：
+
+> 💡 **前置要求**：除 Docker 外，本机需安装 **JDK 21**（IDEA 运行与 `mvnw` 均依赖）。
+
+```bash
+# 1. 复制环境变量（必须先于第 2 步：MySQL / Redis 密码等均来自 .env，缺失会导致容器启动失败）
+cp .env.example .env
+
+# 2. 启动基础设施中间件 + 本地开发版 Nginx（反向代理至宿主机 IDEA）
+docker compose up -d ca-mysql ca-redis ca-es ca-minio ca-nginx-dev
+
+# 3. 宿主机在 IDEA 中直接点击 Debug/Run 运行主启动类，或命令行运行：
+# Linux / macOS:
 ./mvnw spring-boot:run
+# Windows:
+.\mvnw.cmd spring-boot:run
 ```
-服务将在本地 `http://localhost:8082` 端口就绪：
-- **Knife4j 交互式接口文档**：`http://localhost:8082/doc.html`
-- **OpenAPI 3 JSON 描述**：`http://localhost:8082/v3/api-docs`
+
+启动完成后，直接在浏览器访问 **`http://localhost:8080`** 即可进行全功能联调与断点调试！
+
+> 💡 **模式切换提示**：
+> - 从全容器模式切到本地 IDEA 模式：`docker compose stop ca-app ca-nginx && docker compose up -d ca-nginx-dev`
+> - 从本地 IDEA 模式切回全容器模式：`docker compose stop ca-nginx-dev && docker compose up -d ca-app ca-nginx`
+
+> ⚠️ **与 dev-databases 开发栈互斥说明**：本部署栈的数据端口（`3306` / `6379` / `9000` / `9001` / `9200`）与独立的 `dev-databases` 中间件仓库完全相同，两套容器栈**不可同时运行**。若此前使用 `dev-databases` 进行本地开发，请先执行 `cd dev-databases && ./stop.sh` 停掉旧栈，再启动本仓库的容器编排（数据库初始化脚本 `init/mysql/community_affairs.sql` 在两个仓库中内容一致，业务数据在新栈首次启动时自动重建）。
+
+### 6. 部署相关工程目录
+
+```text
+community-affairs/
+├── Dockerfile               # 多阶段分层镜像构建（BuildKit 缓存加速 + 非 Root 安全运行）
+├── docker-compose.yml       # 全套 6 大服务容器编排与健康检查配置
+├── .dockerignore            # 构建上下文过滤（排除本地大文件）
+├── .env.example             # 环境变量模版（密码 / 密钥 / 文件公开地址）
+├── .gitattributes           # 强制 LF 换行符（防 Windows CRLF 破坏容器内配置解析）
+├── elasticsearch/           # Elasticsearch Docker 构建目录（ES 9.2.0 + IK 中文分词插件）
+│   └── Dockerfile
+├── nginx/                   # Nginx 配置文件（双环境配置体系）
+│   ├── nginx.conf           # 主配置文件（Gzip / 日志 / 上传限制 20MB）
+│   ├── conf.d/default.conf  # 容器生产模式路由网关（反代至 ca-app:8082 容器）
+│   └── conf.dev.d/default.conf # 本地开发模式路由网关（反代至 host.docker.internal:8082 宿主机 IDEA）
+├── html/                    # 前端静态资源目录（已内置打包产物，开箱即用）
+│   ├── index.html           # 前端 SPA 首页
+│   └── assets/              # 前端 JS/CSS 静态资源库
+├── init/
+│   └── mysql/community_affairs.sql  # 数据库初始化 DDL & 种子数据（首次启动自动执行）
+└── src/                     # Spring Boot 源码与资源文件
+```
+
+### 7. 常见问题与排错指南（FAQ）
+
+**Q1: 后端启动直接失败，提示 JWT 密钥相关错误？**
+* **原因**：`.env` 未创建或 `JWT_SECRET` 未填写。`application.yaml` 中该配置项无默认值，属强制安全约束，未设置时启动即失败（本地 IDEA 模式同样适用）。
+* **解决**：按步骤 2 创建 `.env`，使用 `openssl rand -base64 48` 生成密钥后填入。
+
+**Q2: 修改 `.env` 中的 `MYSQL_PASSWORD` 后，`ca-mysql` 一直 unhealthy，`ca-app` 起不来？**
+* **原因**：MySQL root 密码仅在**首次初始化**（`ca-mysql-data` 数据卷为空）时写入，之后修改 `.env` 并不会同步到已有数据卷：MySQL 健康检查使用新密码连接失败 -> `ca-mysql` 永远无法达到 `healthy` -> `ca-app` 因 `depends_on: service_healthy` 条件不满足而不会启动。
+* **解决（清空重建）**：⚠️ 会删除全部数据卷（MySQL / Redis / ES / MinIO 数据全部清空）：
+  ```bash
+  docker compose down -v
+  docker compose up -d --build
+  ```
+* **保留数据换密码**：先进入 MySQL 容器把 root 密码手动改为新值，再更新 `.env` 并重启：
+  ```bash
+  docker compose exec ca-mysql mysql -uroot -p"旧密码" \
+    -e "ALTER USER 'root'@'%' IDENTIFIED BY '新密码'; ALTER USER 'root'@'localhost' IDENTIFIED BY '新密码'; FLUSH PRIVILEGES;"
+  # 然后在 .env 中更新 MYSQL_PASSWORD 后执行：
+  docker compose up -d
+  ```
+  注意：Redis 密码随 `.env` 重启即生效；JWT 密钥变更会使所有已登录 Token 失效（用户需重新登录）。**建议首次启动前就确定好最终密码。**
+
+**Q3: 启动后报错找不到数据表，或演示账号登录不上（表结构与种子数据未导入）？**
+* **原因**：`init/mysql/community_affairs.sql` 仅在 MySQL 数据卷**首次初始化**时自动执行，已初始化过的容器不会重复执行。
+* **解决**：手动导入初始化脚本（自带建库语句，可重复执行，重复执行会重建全部表）：
+  ```bash
+  docker exec -i ca-mysql mysql -uroot -p"${MYSQL_PASSWORD}" < init/mysql/community_affairs.sql
+  ```
+
+**Q4: 出现 `pull access denied for ca-es` 警告？**
+* **说明**：`ca-es` 是本项目本地基于 `elasticsearch/Dockerfile` 构建的镜像（官方 ES 9.2.0 + IK 中文分词插件），而非公网公共镜像。Docker Compose 启动时如果本地尚未生成该镜像，会尝试从 Docker Hub 查询并输出该提示，随后自动降级为本地构建。
+* **解决**：使用 `docker compose up -d --build` 即可直接指示 Docker 在本地构建镜像，不会受到该警告影响。
+
+**Q5: Linux / WSL2 启动时 Elasticsearch 报错退出（`vm.max_map_count [65530] is too low`）？**
+* **Linux 解决**：执行 `sudo sysctl -w vm.max_map_count=262144`。
+* **Windows WSL2 解决**：PowerShell 执行 `wsl -d docker-desktop sysctl -w vm.max_map_count=262144`。
+
+**Q6: 如何更新前端页面或后端代码？**
+* **更新前端**：在前端工程 `community-affairs-vue` 中修改后执行打包（`pnpm build`），将生成的 `dist` 产物直接覆盖到本项目的 `./html/` 目录，浏览器刷新即可，**无需重启任何容器**。
+* **更新后端代码**：
+  ```bash
+  # 利用 BuildKit 极速增量重构应用镜像（依赖层缓存复用，仅重打包应用层）
+  docker compose up -d --build ca-app
+  ```
+
+**Q7: 在其他电脑打开网页，上传的图片 / 凭证照片显示破图？**
+* **原因**：`.env` 中的 `MINIO_PUBLIC_ENDPOINT` 仍保持默认的 `127.0.0.1`，导致文件地址生成为 `http://127.0.0.1:9000/community-files/...`，外部设备访问时会尝试向其自身请求文件。
+* **解决**：在部署机器的 `.env` 中将 `MINIO_PUBLIC_ENDPOINT` 改为 `http://<服务器真实公网或局域网IP>:9000`，然后重启应用容器：`docker compose restart ca-app`。修改后**新上传文件**的地址会自动跟随；历史数据的地址可在 MinIO 控制台核对。
+
+**Q8: 文件上传失败？**
+* **排查**：确认 `ca-minio` 容器状态为 `healthy`、`.env` 中 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` 与实际一致；存储桶 `community-files` 由后端启动时自动创建（含匿名只读策略），无需手动建桶；单文件大小上限为 20MB（`application.yaml` multipart 与 Nginx `client_max_body_size` 均已对齐）。
 
 ---
 

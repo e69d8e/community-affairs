@@ -45,6 +45,15 @@ public class MinioUtil {
     @Value("${minio.endpoint:http://127.0.0.1:9000}")
     private String endpoint;
 
+    /**
+     * 浏览器访问文件的公开地址（用于拼接入库的文件 URL）。
+     * 容器化部署时 API 调用走内网地址（如 http://ca-minio:9000），
+     * 而浏览器无法解析内网服务名，需配置为宿主机可达地址（如 http://<服务器IP>:9000）；
+     * 留空时回退为 endpoint 本身（本地开发场景两者一致）。
+     */
+    @Value("${minio.public-endpoint:}")
+    private String publicEndpoint;
+
     @PostConstruct
     public void initBucket() {
         try {
@@ -111,8 +120,8 @@ public class MinioUtil {
                             .build()
             );
 
-            // 返回外部访问 URL
-            return endpoint + "/" + defaultBucket + "/" + newFileName;
+            // 返回外部访问 URL（容器部署时 publicEndpoint 为宿主机可达地址）
+            return publicBase() + "/" + defaultBucket + "/" + newFileName;
         } catch (Exception e) {
             log.error("MinIO 文件上传失败: ", e);
             throw new BizException(ErrorCode.FILE_UPLOAD_ERROR, "文件上传失败: " + e.getMessage());
@@ -121,9 +130,8 @@ public class MinioUtil {
 
     public void removeFile(String fileUrl) {
         try {
-            String prefix = endpoint + "/" + defaultBucket + "/";
-            if (fileUrl != null && fileUrl.startsWith(prefix)) {
-                String objectName = fileUrl.substring(prefix.length());
+            String objectName = extractObjectName(fileUrl);
+            if (objectName != null) {
                 minioClient.removeObject(
                         RemoveObjectArgs.builder()
                                 .bucket(defaultBucket)
@@ -134,5 +142,27 @@ public class MinioUtil {
         } catch (Exception e) {
             log.warn("MinIO 删除文件异常: {}", e.getMessage());
         }
+    }
+
+    private String publicBase() {
+        return (publicEndpoint == null || publicEndpoint.isBlank()) ? endpoint : publicEndpoint;
+    }
+
+    /**
+     * 从文件 URL 中提取对象名，兼容 endpoint 与 public-endpoint 两种前缀
+     */
+    private String extractObjectName(String fileUrl) {
+        if (fileUrl == null) {
+            return null;
+        }
+        for (String base : new String[]{endpoint, publicEndpoint}) {
+            if (base != null && !base.isBlank()) {
+                String prefix = base + "/" + defaultBucket + "/";
+                if (fileUrl.startsWith(prefix)) {
+                    return fileUrl.substring(prefix.length());
+                }
+            }
+        }
+        return null;
     }
 }
