@@ -50,7 +50,26 @@ public class DatabaseInitializer implements ApplicationRunner {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邻里闲置互助私信表';
             """);
 
-            log.info("数据库 biz_post_like 与 biz_chat_message 架构检查与自动初始化成功");
+            // 3. 创建文件秒传登记表（SHA-256 内容指纹去重 + 孤儿清理依据）
+            jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS `sys_file` (
+                    `id` BIGINT NOT NULL PRIMARY KEY,
+                    `file_hash` CHAR(64) NOT NULL COMMENT '文件内容 SHA-256 指纹',
+                    `folder` VARCHAR(50) NOT NULL COMMENT '业务目录',
+                    `object_name` VARCHAR(300) NOT NULL COMMENT 'MinIO 对象名',
+                    `file_url` VARCHAR(500) NOT NULL COMMENT '对象公开访问 URL',
+                    `original_name` VARCHAR(255) DEFAULT '' COMMENT '原始文件名',
+                    `content_type` VARCHAR(100) DEFAULT '' COMMENT '文件 MIME 类型',
+                    `file_size` BIGINT NOT NULL DEFAULT 0 COMMENT '文件大小(字节)',
+                    `upload_user_id` BIGINT DEFAULT NULL COMMENT '上传人用户ID',
+                    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '上传登记时间',
+                    UNIQUE KEY `uk_file_hash` (`file_hash`),
+                    KEY `idx_object_name` (`object_name`),
+                    KEY `idx_create_time` (`create_time`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件秒传登记表';
+                """);
+
+            log.info("数据库 biz_post_like / biz_chat_message / sys_file 架构检查与自动初始化成功");
 
             // 3. 补充唯一索引兜底（表已存在时 CREATE TABLE 不会生效，用 ALTER 追加；重复执行/索引已存在时忽略）
             safeExecute("ALTER TABLE `biz_activity_signup` ADD UNIQUE KEY `uk_verify_code` (`verify_code`)");

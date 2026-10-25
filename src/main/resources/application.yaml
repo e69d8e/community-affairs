@@ -63,6 +63,15 @@ minio:
   secret-key: ${MINIO_SECRET_KEY}
   bucket-name: community-files
 
+# 文件生命周期管理：SHA-256 秒传登记(sys_file) + 孤儿文件定时清理
+file:
+  cleanup:
+    # 未被任何业务引用的文件保留宽限期(小时)，期内不清理（可能正被表单编辑引用）
+    retention-hours: ${FILE_CLEANUP_RETENTION_HOURS:168}
+    # 清理任务：启动后首次延迟 / 执行间隔(毫秒)，默认启动 1 分钟后首扫、之后每天一次
+    initial-delay-ms: ${FILE_CLEANUP_INITIAL_DELAY_MS:60000}
+    interval-ms: ${FILE_CLEANUP_INTERVAL_MS:86400000}
+
 # JWT 鉴权配置（密钥必须由 .env 或环境变量提供，未设置时启动即失败）
 jwt:
   secret: ${JWT_SECRET}

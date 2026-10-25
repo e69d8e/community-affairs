@@ -450,6 +450,27 @@ CREATE TABLE `sys_operation_log` (
   KEY `idx_operator` (`operator_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统操作审计日志表';
 
+-- ------------------------------------------------------------------------------
+-- 21. 文件秒传登记表: sys_file
+-- ------------------------------------------------------------------------------
+DROP TABLE IF EXISTS `sys_file`;
+CREATE TABLE `sys_file` (
+  `id` BIGINT NOT NULL,
+  `file_hash` CHAR(64) NOT NULL COMMENT '文件内容 SHA-256 指纹',
+  `folder` VARCHAR(50) NOT NULL COMMENT '业务目录',
+  `object_name` VARCHAR(300) NOT NULL COMMENT 'MinIO 对象名',
+  `file_url` VARCHAR(500) NOT NULL COMMENT '对象公开访问 URL',
+  `original_name` VARCHAR(255) DEFAULT '' COMMENT '原始文件名',
+  `content_type` VARCHAR(100) DEFAULT '' COMMENT '文件 MIME 类型',
+  `file_size` BIGINT NOT NULL DEFAULT 0 COMMENT '文件大小(字节)',
+  `upload_user_id` BIGINT DEFAULT NULL COMMENT '上传人用户ID',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '上传登记时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_file_hash` (`file_hash`),
+  KEY `idx_object_name` (`object_name`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件秒传登记表';
+
 -- ==============================================================================
 -- 种子数据初始化 (Seed Data)
 -- 预置密码均为 123456 (BCrypt 哈希)

@@ -558,6 +558,11 @@ community-affairs/
 **Q8: 文件上传失败？**
 * **排查**：确认 `ca-minio` 容器状态为 `healthy`、`.env` 中 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` 与实际一致；存储桶 `community-files` 由后端启动时自动创建（含匿名只读策略），无需手动建桶；单文件大小上限为 20MB（`application.yaml` multipart 与 Nginx `client_max_body_size` 均已对齐）。
 
+**Q9: 相同图片重复上传会占双份存储吗？没提交表单的图片会一直留着吗？**
+* **秒传去重**：上传链路按文件内容 SHA-256 指纹去重（登记表 `sys_file`）。前端上传前先调 `/api/common/upload/check` 预检，命中直接复用已有 URL 零传输；后端上传时同样按指纹兜底去重，相同内容在桶内只存一份。
+* **孤儿自动清理**：定时任务 `FileCleanupTask` 每天扫描桶内对象，全量比对业务表（头像/工单/集市/举报/房产认证/公告富文本等 11 处 URL 字段）引用情况，删除未被引用且超过保留宽限期（默认 168 小时，`file.cleanup.retention-hours` 可调）的对象，并同步清理 `sys_file` 失效登记；宽限期内不清理，防止正在编辑的表单图片被误删。
+* 注意：同一内容的文件跨业务目录（如头像图复用为集市图）共享同一对象，删除均以"是否仍被引用"为准，不会误删。
+
 ---
 
 ## 七、 核心 RESTful API 清单概览
@@ -594,4 +599,5 @@ community-affairs/
 | | `/api/admin/screen/data` | GET | 16:9 全屏指挥驾驶舱综合治理可视化聚合数据包 |
 | **全文检索** | `/api/search` | GET | 基于 Elasticsearch 9.2 + IK 的全局多维全文检索 |
 | | `/api/search/hot` | GET | 获取全网热搜词榜单（基于 Redis ZSet 权重排序） |
-| **通用文件** | `/api/common/upload` | POST | 多媒体文件上传至 MinIO 私有化对象存储桶 |
+| **通用文件** | `/api/common/upload` | POST | 多媒体文件上传至 MinIO 私有化对象存储桶（SHA-256 内容级秒传去重） |
+| | `/api/common/upload/check` | GET | 文件秒传预检：传 SHA-256 指纹，命中直接返回已有文件 URL 免传输 |

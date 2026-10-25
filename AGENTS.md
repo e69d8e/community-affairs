@@ -39,7 +39,7 @@ docker exec -i ca-mysql mysql -uroot -p"${MYSQL_PASSWORD}" < init/mysql/communit
 4. MyBatis-Plus 全局约定：逻辑删除字段 `deleted`（1 删除 / 0 正常）、主键 `assign_id`、下划线转驼峰。
 5. 管理端接口路径统一含 `/admin/`（`/api/*/admin/**`），SecurityConfig 中的 URL 规则是四类工作人员（超管/社区/物业/网格）的兜底闸门，新增管理接口保持该路径约定。
 6. 敏感词过滤基于内存 DFA 前缀树（`DfaFilterUtil`），词库增删需热重载前缀树；邻里帖/评论内容必须过 DFA。
-7. 文件上传走 `MinioUtil`（桶 `community-files` 自动创建，单文件 20MB 上限，multipart 与 Nginx `client_max_body_size` 已对齐）。
+7. 文件上传统一走 `FileService`（秒传）→ `MinioUtil`（桶 `community-files` 自动创建，单文件 20MB 上限，multipart 与 Nginx `client_max_body_size` 已对齐）。按内容 SHA-256 在 `sys_file` 登记表去重（相同内容全桶仅一份，秒传命中直接复用 URL）；`FileCleanupTask` 定时删除未被业务表引用且超 `file.cleanup.retention-hours`（默认 168h）宽限期的对象。**新增存文件 URL 的表字段时，必须同步加进 `FileServiceImpl.REFERENCE_COLUMNS` 引用扫描清单，否则该字段的图片会被清理任务误删。**
 
 ## 环境与坑
 

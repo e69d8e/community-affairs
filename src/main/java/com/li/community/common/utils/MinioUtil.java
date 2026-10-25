@@ -6,6 +6,7 @@ import cn.hutool.core.util.IdUtil;
 import com.li.community.common.exception.BizException;
 import com.li.community.common.exception.ErrorCode;
 import io.minio.*;
+import io.minio.messages.Item;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +15,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -132,16 +136,48 @@ public class MinioUtil {
         try {
             String objectName = extractObjectName(fileUrl);
             if (objectName != null) {
-                minioClient.removeObject(
-                        RemoveObjectArgs.builder()
-                                .bucket(defaultBucket)
-                                .object(objectName)
-                                .build()
-                );
+                removeObject(objectName);
             }
         } catch (Exception e) {
             log.warn("MinIO 删除文件异常: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 按对象名直接删除（孤儿清理用），失败时向上抛出由调用方决定跳过还是中断
+     */
+    public void removeObject(String objectName) throws Exception {
+        minioClient.removeObject(
+                RemoveObjectArgs.builder()
+                        .bucket(defaultBucket)
+                        .object(objectName)
+                        .build()
+        );
+    }
+
+    /**
+     * 列举桶内全部对象（对象名 + 最后修改时间），供孤儿文件清理比对
+     */
+    public List<ObjectInfo> listBucketObjects() throws Exception {
+        List<ObjectInfo> objects = new ArrayList<>();
+        Iterable<Result<Item>> results = minioClient.listObjects(
+                ListObjectsArgs.builder().bucket(defaultBucket).recursive(true).build()
+        );
+        for (Result<Item> result : results) {
+            Item item = result.get();
+            objects.add(new ObjectInfo(item.objectName(), item.lastModified().toInstant()));
+        }
+        return objects;
+    }
+
+    /**
+     * 对象名拼公开访问 URL（与上传返回的 URL 规则一致）
+     */
+    public String publicUrlOf(String objectName) {
+        return publicBase() + "/" + defaultBucket + "/" + objectName;
+    }
+
+    public record ObjectInfo(String objectName, Instant lastModified) {
     }
 
     private String publicBase() {
@@ -151,7 +187,7 @@ public class MinioUtil {
     /**
      * 从文件 URL 中提取对象名，兼容 endpoint 与 public-endpoint 两种前缀
      */
-    private String extractObjectName(String fileUrl) {
+    public String extractObjectName(String fileUrl) {
         if (fileUrl == null) {
             return null;
         }
