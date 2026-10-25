@@ -83,7 +83,7 @@ public class ActivityServiceImpl implements ActivityService {
         Page<BizActivity> result = activityMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizActivity>()
-                        .eq(BizActivity::getCommunityId, communityScope)
+                        .eq(communityScope != null, BizActivity::getCommunityId, communityScope)
                         .eq(category != null && !category.isEmpty(), BizActivity::getCategory, category)
                         .eq(status != null, BizActivity::getStatus, status)
                         .orderByDesc(BizActivity::getCreateTime)

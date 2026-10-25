@@ -69,7 +69,7 @@ public class MarketPostServiceImpl implements MarketPostService {
         Page<BizMarketPost> result = marketPostMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizMarketPost>()
-                        .eq(BizMarketPost::getCommunityId, communityScope)
+                        .eq(communityScope != null, BizMarketPost::getCommunityId, communityScope)
                         .eq(postType != null, BizMarketPost::getPostType, postType)
                         .eq(status != null, BizMarketPost::getStatus, status)
                         .ne(status == null, BizMarketPost::getStatus, 4) // 默认过滤封禁违规

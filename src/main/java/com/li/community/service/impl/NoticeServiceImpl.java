@@ -53,7 +53,7 @@ public class NoticeServiceImpl implements NoticeService {
         Page<SysNotice> result = noticeMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<SysNotice>()
-                        .eq(SysNotice::getCommunityId, communityScope)
+                        .eq(communityScope != null, SysNotice::getCommunityId, communityScope)
                         .eq(noticeType != null, SysNotice::getNoticeType, noticeType)
                         .eq(SysNotice::getStatus, 1) // 仅已发布
                         .orderByDesc(SysNotice::getIsTop)
