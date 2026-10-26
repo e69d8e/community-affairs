@@ -1,7 +1,8 @@
 # 基于 SpringBoot 的社区综合事务管理系统 (后端服务)
 
 > **本科毕业设计选题**：《基于SpringBoot的社区综合事务管理系统的设计与实现》  
-> **核心定位**：整合社区公告、通知、报修、投诉建议、文体活动报名、邻里互助、二手闲置、空间网格与物业反馈的全功能一站式数字治理中台。
+> **核心定位**：整合社区公告、通知、报修、投诉建议、文体活动报名、邻里互助、二手闲置、空间网格与物业反馈的全功能一站式数字治理中台。  
+> **前端配套工程**：[community-affairs-vue](https://github.com/e69d8e/community-affairs-vue)（Vue 3 + Vite 6 + TypeScript + Element Plus + Pinia + ECharts）
 
 ---
 
@@ -312,8 +313,8 @@ sequenceDiagram
 | 服务 | 容器名 | 镜像 / 版本 | 宿主机端口 | 职责说明 |
 |---|---|---|---|---|
 | 统一网关 | `ca-nginx` | nginx:stable-alpine | `8080`（对外） | 前端 SPA 静态直出 + API / WebSocket 反向代理 |
-| 后端应用 | `ca-app` | 本仓库 Dockerfile 分层构建 | `8082`（仅回环） | Spring Boot 3.4 核心 服务，非 root 用户运行 |
-| 关系数据库 | `ca-mysql` | mysql:8.4.11 LTS | `3306`（仅回环） | 首次启动自动建库并导入全量 表结构与种子数据 |
+| 后端应用 | `ca-app` | 本仓库 Dockerfile 分层构建 | `8082`（仅回环） | Spring Boot 3.4 核心服务，非 root 用户运行 |
+| 关系数据库 | `ca-mysql` | mysql:8.4.11 LTS | `3306`（仅回环） | 首次启动自动建库并导入全量表结构与种子数据 |
 | 分布式缓存 | `ca-redis` | redis:7.2.16-alpine | `6379`（仅回环） | 活动名额 Lua 原子扣减 / JWT 黑名单 / 热搜 ZSet |
 | 全文检索 | `ca-es` | 本地构建（ES 9.2.0 + IK 分词） | `9200`（仅回环） | 公告 / 活动 / 集市中文全文索引 |
 | 对象存储 | `ca-minio` | alpine/minio:RELEASE.2025-10-15T17-29-55Z（非 root 运行） | `9000`（对外）/ `9001`（回环） | 工单照片 / 完工凭证 / 活动海报存储与浏览器直读 |
@@ -354,7 +355,7 @@ sequenceDiagram
 
 #### 步骤 1：克隆代码仓库
 ```bash
-git clone <本仓库地址> community-affairs
+git clone https://github.com/e69d8e/community-affairs.git
 cd community-affairs
 ```
 
@@ -402,7 +403,7 @@ JWT_SECRET=your_jwt_secret_at_least_32_bytes
 #### 步骤 3：前端资源说明（开箱即用，已内置）
 > 💡 **已内置打包产物**：项目代码库中的 `html/` 目录下**已自带完整编译打包好的前端静态资源**（包含 `html/index.html` 与 `html/assets/` 下的全部 JS/CSS 生产文件）。克隆项目后**无需安装 Node.js / pnpm 或执行任何前端构建命令**，启动 Docker 后即可直接通过浏览器访问完整功能的前端页面（前端通过相对路径 `/api` 与 `/ws` 请求同源网关，天然兼容 Nginx 代理部署）。
 
-若后续需要对前端进行二次开发，可前往前端源码工程 `community-affairs-vue`（Vue 3 + Vite + Element Plus + Pinia + ECharts），修改后执行 `pnpm build`，将生成的 `dist/` 产物覆盖至本仓库 `./html/` 目录，浏览器刷新即可生效（无需重启容器）。
+若后续需要对前端进行二次开发，可前往前端源码工程 [community-affairs-vue](https://github.com/e69d8e/community-affairs-vue)（Vue 3 + Vite + Element Plus + Pinia + ECharts），修改后执行 `pnpm build`，将生成的 `dist/` 产物覆盖至本仓库 `./html/` 目录，浏览器刷新即可生效（无需重启容器）。
 
 #### 步骤 4：一键构建并后台启动所有服务
 - **Linux / macOS**：
