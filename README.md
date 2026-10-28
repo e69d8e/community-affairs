@@ -29,13 +29,14 @@ flowchart TD
         WorkOrderService["工单状态机模块 (报修/投诉/派单/验收闭环)"]
         ActivityService["活动并发治理 (Redis Lua 防超卖/动态二维码核销)"]
         MarketService["邻里互助与闲置集市 (DFA 敏感词实时过滤)"]
+        ChatService["邻里私信沟通服务 (点对点私信/会话追踪/未读提醒)"]
         NoticeService["公告通告中心 (Spring WebSocket 紧急广播)"]
         SearchService["全文检索中心 (Elasticsearch 9.2 + IK分词)"]
         DashboardService["大屏指标聚合中心 (统计卡片/漏斗/雷达/热力图)"]
     end
 
     subgraph InfrastructureLayer ["分布式基础设施与存储层"]
-        MySQL[("MySQL 8.4 关系型主库 (20张核心表)")]
+        MySQL[("MySQL 8.4 关系型主库 (23张核心表)")]
         Redis[("Redis 7.2 缓存 / Lua 脚本 / ZSet 热搜")]
         ES[("Elasticsearch 9.2 IK 中文全文索引库")]
         MinIO[("MinIO 私有化分布式对象存储 (S3 协议)")]
@@ -60,11 +61,12 @@ flowchart TD
 | **认证与安全** | Spring Security + JJWT | 6.x / 0.12.5 | 基于无状态 JWT 实现会话保持，结合 Redis 维护黑名单保障即时吊销 |
 | **并发治理** | Redis Lua 脚本 | 7.2 Alpine | 活动报名时原子扣减库存与名额防超卖，保障高并发下的超卖防御 |
 | **全文检索** | Elasticsearch + IK | 9.2.0 | 对通知公告、闲置物品、互助求助进行分词索引与高亮搜索 |
-| **私有化存储** | MinIO Object Storage | Latest (S3) | 支持工单报修照片、完工凭证、活动海报与房产认证原件的本地化持久存储 |
+| **私有化存储** | MinIO Object Storage | alpine/minio:RELEASE.2025-10-15T17-29-55Z | 支持工单报修照片、完工凭证、活动海报与房产认证原件的本地化持久存储 |
 | **实时推送** | Spring WebSocket + STOMP | 6.2.x | 应急突发通告全区即时广播、工单流转节点实时派发到户 |
 | **内容风控** | DFA 前缀树算法 | 自研 | 针对邻里互动求助与集市发帖内容，毫秒级扫描拦截涉黄涉暴违规敏感词 |
 | **报表导出** | EasyExcel | 3.3.4 | 支撑千万级报修工单台账与活动居民花名册的无内存溢出极速导出 |
-| **API 文档** | Knife4j (OpenAPI 3) | 4.5.0 | 自动生成标准化交互式 Swagger 接口文档，便于毕设前后端协同联调 |
+| **API 文档** | Knife4j (OpenAPI 3) | 4.6.0 | 自动生成标准化交互式 Swagger 接口文档，便于毕设前后端协同联调 |
+| **大模型智能化** | LangChain4j + OpenAI 规范 | 1.0.0-beta3 | 接入 DeepSeek/通义千问等 LLM，实现社区百事通 SSE 流式问答、工单智能填报与初审分诊研判（支持离线规则降级） |
 
 ---
 
@@ -96,7 +98,7 @@ sequenceDiagram
 
     Resident->>Server: 发起在线报名 (POST /api/activity/signup)
     Server->>Redis: 执行 activity_signup.lua 原子脚本
-    Note over Redis: 校验报名开启窗口<br/>校验是否重复报名<br/>原子递增当前名额 (current <= max)
+    Note over Redis: 校验是否重复报名 (sismember)<br/>校验并原子递减剩余名额 (decr > 0)<br/>记录用户已报名集合 (sadd)
     alt 名额已满或已重复报名
         Redis-->>Server: 返回超卖或重复错误码
         Server-->>Resident: 提示“名额已满”或“已报名”
@@ -123,11 +125,11 @@ sequenceDiagram
 
 ## 四、 数据库核心模型表说明
 
-系统包含 20 张核心业务与权限表（全量外键索引与逻辑约束均已固化）：
+系统包含 23 张核心业务与权限表（其中 21 张由 `init/mysql/community_affairs.sql` 首次初始化创建，`biz_post_like` 与 `biz_chat_message` 在应用启动时由 `DatabaseInitializer` 自动幂等建表增补，全量索引与逻辑约束均已固化）：
 
 | 表名 | 模块类别 | 核心功能与字段职责 |
 |---|---|---|
-| `sys_user` | 权限中心 | 用户主表，包含密码哈希、真实姓名、手机号、信用分、账号状态 |
+| `sys_user` | 权限中心 | 用户主表，包含密码哈希、真实姓名、手机号、信用分、账号状态、所属小区ID |
 | `sys_role` | 权限中心 | RBAC 角色字典 (系统管理员、社区管理员、物业管理员、网格员、居民) |
 | `sys_user_role` | 权限中心 | 用户与角色多对多关联映射表 |
 | `biz_community` | 空间网格 | 小区基础信息、经纬度地理坐标、联系方式 |
@@ -138,15 +140,18 @@ sequenceDiagram
 | `biz_work_order` | 工单中心 | 报修与投诉工单主表 (状态机：待审/驳回/派单/施工/完工/结单) |
 | `biz_order_log` | 工单中心 | 工单全生命周期流转轨迹日志表 (记录操作人、前后状态、流转凭证) |
 | `biz_activity` | 社区活动 | 文体公益活动信息 (报名起止时间、名额上限、当前人数、状态) |
-| `biz_activity_signup` | 社区活动 | 活动报名核销凭据表 (6位防伪核销码、二维码 Base64、签到时间) |
+| `biz_activity_signup` | 社区活动 | 活动报名核销凭据表 (专属6位防伪核销码、128位动态签到二维码串、签到时间) |
 | `biz_market_post` | 邻里互助 | 闲置转让、借物、拼车、求助主表 (价格、交付方式、流转状态) |
 | `biz_post_comment` | 邻里互助 | 帖子楼中楼留言互动表 (支持二级回复、敏感词自动过滤) |
+| `biz_post_like` | 邻里互助 | 帖子点赞记录表 (用户与帖子联合唯一索引 uk_user_post 防重复点赞) |
 | `biz_post_favorite` | 邻里互助 | 居民对闲置和互助帖的收藏关系表 |
+| `biz_chat_message` | 邻里私信 | 邻里闲置互助私信表 (会话 session_id 标识、点对点买卖沟通、已读未读状态与未读统计) |
 | `biz_sensitive_word` | 内容风控 | DFA 算法敏感词过滤库 (分类：违禁、诈骗、低俗、政治，匹配规则) |
-| `biz_report` | 内容风控 | 违规纠纷举报处理表 (受理类型、举报依据、核查处置说明) |
+| `biz_report` | 内容风控 | 违规纠纷举报处理表 (受理类型、举报依据、所属小区、核查处置说明) |
 | `sys_notice` | 消息通告 | 社区公告表 (政策宣传、便民提示、物业通知、突发应急广播) |
 | `sys_user_notice` | 消息通告 | 居民个人站内信箱表 (已读未读红点标记、业务跳转ID) |
 | `sys_operation_log` | 系统审计 | 管理员及工作人员关键操作审计日志 (耗时统计、参数快照) |
+| `sys_file` | 基础设施 | 文件秒传登记表 (SHA-256 内容指纹去重、MinIO 对象路径、文件大小与孤儿定时清理依据) |
 
 ---
 
@@ -237,7 +242,7 @@ flowchart TB
 - **核心职责清单**：
   1. **房产认证与人口实名核验**：负责在线审核居民认领本楼栋房屋的申请，严格比对居民上传的房产证原件、购房合同或房屋租赁备案凭证，核实居住身份（业主/家属/租客）；
   2. **楼栋微报修公区故障初勘**：对居民反映的楼道灯具、单元对讲门等报修进行现场巡查核实，确认无误后通过初审并提报物业派单；
-  3. **活动现场核销签到工作台**：在文体公益活动现场值守，使用电脑端或手持设备录入居民出示的 6 位动态防伪核销码（或通过扫码枪解析二维码 Base64），即时完成入场核销，防止冒领与二次使用；
+  3. **活动现场核销签到工作台**：在文体公益活动现场值守，使用电脑端或手持设备录入居民出示的 6 位动态防伪核销码（或通过扫码枪解析动态二维码串），即时完成入场核销，防止冒领与二次使用；
   4. **邻里纠纷与违规现场核查**：接到闲置物品纠纷、飞线充电等举报后实地走访核查，提交第一手网格裁决说明。
 - **代码级权限特征**：`@PreAuthorize` 放行工单初审、房产认证审批 (`/api/grid/admin/house-bind/audit`) 与活动防伪核销 (`/api/activity/admin/verify`)；服务层依据 `biz_building.grid_officer_id` 将工单列表/详情/初审与认证审批数据强制限定在本人负责楼栋范围内。
 
@@ -280,27 +285,31 @@ sequenceDiagram
 
 ### 4. 接口级权限矩阵 (代码层强制执行)
 
-> 以下矩阵与控制器方法上的 `@PreAuthorize` 注解一一对应，是**运行时真实强制**的权限规则（非仅文档约定）；越权调用统一被 Spring Security 拦截并返回 `403`。
+> 以下矩阵覆盖后端控制器方法上的全部 39 个方法级 `@PreAuthorize` 注解，是**运行时真实强制**的权限规则（非仅文档约定）；越权调用统一被 Spring Security 拦截并返回 `403`。
 
-| 功能接口组 | 接口路径 | 👑 系统 | 🏛️ 社区 | 🛠️ 物业 | 📋 网格员 |
-|---|---|:---:|:---:|:---:|:---:|
-| 用户赋权 / 账号启停 / 角色分配 | `/api/user/admin/**` | ✅ | — | — | — |
-| 敏感词库增删维护 | `/api/moderation/admin/word/**` | ✅ | — | — | — |
-| ES 全文索引重建同步 | `/api/search/admin/sync-all` | ✅ | — | — | — |
-| 活动创建 / 状态流转 / 花名册导出 | `/api/activity/admin/create` `/status` `/export` | ✅ | ✅ | — | — |
-| 指挥大屏聚合数据包 | `/api/admin/screen/data` | ✅ | ✅ | — | — |
-| 活动现场扫码核销 | `/api/activity/admin/verify` | ✅ | ✅ | — | ✅ |
-| 违规举报受理与裁决 | `/api/moderation/admin/report/**` | ✅ | ✅ | — | ✅ |
-| 工单派单 / 接单开工 / 完工登记 | `/api/order/admin/dispatch` `/start` `/complete` | ✅ | — | ✅ | — |
-| 工单台账 Excel 导出 | `/api/order/admin/export` | ✅ | ✅ | ✅ | — |
-| 公告发布 (含应急全区广播) | `/api/notice/admin/publish` | ✅ | ✅ | ✅ | — |
-| 工单列表 / 初审 | `/api/order/admin/list` `/audit` | ✅ | ✅ | ✅ | ✅ *限本楼栋* |
-| 房产认证列表 / 审批 | `/api/grid/admin/house-bind/**` | ✅ | ✅ | ✅ | ✅ *限本楼栋* |
-| 工作台统计指标 | `/api/admin/dashboard/metrics` | ✅ | ✅ | ✅ | ✅ |
+| 功能接口组 | 接口路径 | 👑 系统 | 🏛️ 社区 | 🛠️ 物业 | 📋 网格员 | 注解鉴权规则 |
+|---|---|:---:|:---:|:---:|:---:|---|
+| 用户中心管理 (列表/状态启停/角色分配) | `/api/user/admin/list` `/status` `/role` (3个) | ✅ | — | — | — | `hasRole('SYSTEM_ADMIN')` |
+| 小区基础信息维护 (列表/新增/修改/删除) | `/api/community/admin/list` `/create` `/update` `/delete/{id}` (4个) | ✅ | — | — | — | `hasRole('SYSTEM_ADMIN')` |
+| 敏感词风控库维护 (列表/新增修改/删除) | `/api/moderation/admin/word/list` `/save` `/{id}` (3个) | ✅ | — | — | — | `hasRole('SYSTEM_ADMIN')` |
+| ES 全文索引手动全量同步 | `/api/search/admin/sync-all` (1个) | ✅ | — | — | — | `hasRole('SYSTEM_ADMIN')` |
+| 活动策划与发布 (创建/状态流转/花名册导出) | `/api/activity/admin/create` `/status` `/export/{activityId}` (3个) | ✅ | ✅ | — | — | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN')` |
+| 16:9 综合指挥驾驶舱聚合数据包 | `/api/admin/screen/data` (1个) | ✅ | ✅ | — | — | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN')` |
+| 活动现场扫码核销 | `/api/activity/admin/verify` (1个) | ✅ | ✅ | — | ✅ | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'GRID_OFFICER')` |
+| 违规举报受理与裁决 (列表/裁决) | `/api/moderation/admin/report/list` `/handle` (2个) | ✅ | ✅ | — | ✅ | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'GRID_OFFICER')` |
+| 楼宇空间台账维护 (楼栋/单元/房屋CRUD与批量生成) | `/api/grid/admin/building/**` `/unit/**` `/house/**` (10个) | ✅ | ✅ | ✅ | — | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')` |
+| 可选楼栋长 (网格员) 账号列表获取 | `/api/grid/admin/officers` (1个) | ✅ | ✅ | ✅ | — | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')` |
+| 公告发布 (含突发应急全区广播) | `/api/notice/admin/publish` (1个) | ✅ | ✅ | ✅ | — | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')` |
+| 全区工单台账 Excel 导出 | `/api/order/admin/export` (1个) | ✅ | ✅ | ✅ | — | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN')` |
+| 工单派单 / 接单开工 / 完工登记 | `/api/order/admin/dispatch` `/start` `/complete` (3个) | ✅ | — | ✅ | — | `hasAnyRole('SYSTEM_ADMIN', 'PROPERTY_ADMIN')` |
+| 工单多维列表检索 / 工单初审 | `/api/order/admin/list` `/audit` (2个) | ✅ | ✅ | ✅ | ✅ *限本楼栋* | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')` |
+| 待审房产绑定列表 / 房产认证审批 | `/api/grid/admin/house-bind/list` `/audit` (2个) | ✅ | ✅ | ✅ | ✅ *限本楼栋* | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')` |
+| 治理工作台核心指标概览 | `/api/admin/dashboard/metrics` (1个) | ✅ | ✅ | ✅ | ✅ | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')` |
+| AI 智能工单初审研判与分诊推荐 | `/api/ai/admin/order/triage` (1个) | ✅ | ✅ | ✅ | ✅ *限本楼栋* | `hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')` |
 
 **三层强制实现机制**：
 
-1. **接口层 (`@PreAuthorize` 方法级鉴权)**：全部 19 个管理端点均在控制器方法上标注 `@PreAuthorize("hasAnyRole(...)")`（项目已启用 `@EnableMethodSecurity`），权限规则与代码同址维护、一目了然；`SecurityConfig` 中的 `/api/admin/**`、`/api/*/admin/**` URL 规则保留为四类工作人员的**兜底闸门**，确保未来新增管理接口即使漏加注解也不会泄露给居民角色。
+1. **接口层 (`@PreAuthorize` 方法级鉴权)**：全部 40 个管理端点均在控制器方法上显式标注 `@PreAuthorize("hasRole(...)")` 或 `@PreAuthorize("hasAnyRole(...)")`（项目已启用 `@EnableMethodSecurity`），权限规则与代码同址维护、一目了然；`SecurityConfig` 中的 `/api/admin/**`、`/api/*/admin/**` URL 规则保留为四类工作人员的**兜底闸门**，确保未来新增管理接口即使漏加注解也不会泄露给居民角色。
 2. **数据层 (网格员楼栋数据隔离)**：工单列表、工单详情、工单初审与房产认证列表/审批，在服务层按 `biz_building.grid_officer_id`（楼栋绑定的网格员）过滤——网格员仅能触达本人负责楼栋的数据，其他管理角色不受限；角色分配接口另含五种合法角色编码白名单校验，杜绝写入任意脏值。
 3. **前端层 (菜单与按钮级显隐)**：前端工程以 `src/constants/permissions.ts` 作为权限矩阵单一事实来源（与后端注解一一对应），派生 Pinia `canXxx` 权限点；路由 `meta.roles` 守卫拦截深度链接越权跳转，管理控制台侧边菜单、工单处置按钮、通告发布与索引同步入口均按角色动态裁剪。
 
@@ -590,11 +599,16 @@ community-affairs/
 | **活动高并发** | `/api/activity/list` | GET | 公开/居民浏览可参与的文体公益活动 |
 | | `/api/activity/signup` | POST | 居民在线报名（基于 Redis Lua 脚本原子防超卖） |
 | | `/api/activity/admin/verify` | POST | 现场网格员扫码或输入6位动态码完成核销入场 |
-| | `/api/activity/admin/export/{id}` | GET | 导出指定活动已报名居民花名册 Excel |
+| | `/api/activity/admin/export/{activityId}` | GET | 导出指定活动已报名居民花名册 Excel |
 | **邻里集市** | `/api/market/publish` | POST | 居民发布闲置与求助（自动触发 DFA 敏感词过滤） |
 | | `/api/market/comment` | POST | 邻里发表互动评论（自动拦截涉敏违规内容） |
 | | `/api/market/like/{id}` | POST | 帖子点赞与取消点赞切换 |
 | | `/api/market/favorite/{id}` | POST | 帖子收藏夹功能 |
+| **邻里私信** | `/api/chat/send` | POST | 居民发送闲置/互助点对点沟通私信 |
+| | `/api/chat/messages` | GET | 查询指定帖子与特定用户的私信历史消息记录 |
+| | `/api/chat/sessions` | GET | 获取当前登录用户的所有私信会话列表（含最新消息与未读数） |
+| | `/api/chat/read` | PUT | 标记指定会话所有消息为已读 |
+| | `/api/chat/unread-count` | GET | 获取当前登录用户的未读私信总条数 |
 | **内容风控** | `/api/moderation/report/submit` | POST | 居民提交违规或矛盾纠纷举报工单 |
 | | `/api/moderation/admin/report/handle` | PUT | 网格中心裁决举报：确认违规一键下架并扣分 |
 | | `/api/moderation/admin/word/save` | POST | 维护敏感词库，实时同步重构内存 DFA 前缀树 |
@@ -604,3 +618,10 @@ community-affairs/
 | | `/api/search/hot` | GET | 获取全网热搜词榜单（基于 Redis ZSet 权重排序） |
 | **通用文件** | `/api/common/upload` | POST | 多媒体文件上传至 MinIO 私有化对象存储桶（SHA-256 内容级秒传去重） |
 | | `/api/common/upload/check` | GET | 文件秒传预检：传 SHA-256 指纹，命中直接返回已有文件 URL 免传输 |
+| **AI 智能化** | `/api/ai/chat/stream` | GET | 基于 LangChain4j 的社区百事通 SSE 流式问答与 RAG 检索（含意图业务直达卡片） |
+| | `/api/ai/chat/history` | GET | 分页查询当前登录用户的 AI 对话历史记录（支持向上滑动无缝加载更早会话） |
+| | `/api/ai/chat/history` | DELETE | 清空当前登录用户的全部 AI 对话历史记录（逻辑删除） |
+| | `/api/ai/order/parse` | POST | 居民报修自然口语智能提炼转结构化工单（标题/分类/加急判别） |
+| | `/api/ai/admin/order/triage` | POST | 管理端工单初审故障机理诊断、到场检修要点与工种推荐研判 |
+
+

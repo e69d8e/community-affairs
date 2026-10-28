@@ -608,4 +608,22 @@ INSERT INTO `sys_user_notice` (`id`, `user_id`, `notice_id`, `notice_type`, `tit
 (12002, 1005, NULL, 'WORK_ORDER', '工单派单进度提醒', '您提交的“1号楼客梯运行异响”工单已被网格员初审通过并派单至物业工程部。', 10001, 0),
 (12003, 1005, NULL, 'ACTIVITY', '活动报名成功核销凭证', '恭喜您成功报名“翠竹苑百家宴暨中秋游园会”，核销码【882601】。', 701, 1);
 
+-- ------------------------------------------------------------------------------
+-- 19. AI百事通对话历史记录表: biz_ai_chat_record
+-- ------------------------------------------------------------------------------
+DROP TABLE IF EXISTS `biz_ai_chat_record`;
+CREATE TABLE `biz_ai_chat_record` (
+  `id` BIGINT NOT NULL COMMENT '主键ID',
+  `user_id` BIGINT NOT NULL COMMENT '用户ID',
+  `role` VARCHAR(20) NOT NULL COMMENT '角色: user/assistant',
+  `content` TEXT NOT NULL COMMENT '对话正文',
+  `card_json` VARCHAR(1000) DEFAULT NULL COMMENT '意图业务卡片JSON',
+  `community_id` BIGINT DEFAULT NULL COMMENT '所属小区ID',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-正常, 1-已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_time` (`user_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI百事通对话历史记录表';
+
 SET FOREIGN_KEY_CHECKS = 1;
+

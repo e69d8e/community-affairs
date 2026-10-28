@@ -93,6 +93,15 @@ knife4j:
         api-rule-resources:
           - com.li.community.controller
 
+# AI 大模型服务配置 (基于 LangChain4j Chat Completions)
+ai:
+  enabled: ${AI_ENABLED:true}
+  api-key: ${AI_API_KEY:}
+  base-url: ${AI_BASE_URL:https://api.deepseek.com/v1}
+  model-name: ${AI_MODEL_NAME:deepseek-chat}
+  temperature: 0.3
+  timeout-seconds: 30
+
 # 日志配置
 logging:
   level:

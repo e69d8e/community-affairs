@@ -71,7 +71,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/notice/list", "/api/notice/detail/**",
                                 "/api/activity/list", "/api/activity/detail/**",
-                                "/api/market/list", "/api/market/detail/**"
+                                "/api/market/list", "/api/market/detail/**",
+                                "/api/ai/chat/stream"
                         ).permitAll()
                         // 管理端专属接口：各模块均为 /api/{module}/admin/**，仪表盘为 /api/admin/**
                         // 此处仅为兜底粗粒度闸门(挡住居民访问)；各接口的精确角色分工

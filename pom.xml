@@ -23,6 +23,7 @@
         <jjwt.version>0.12.5</jjwt.version>
         <hutool.version>5.8.42</hutool.version>
         <zxing.version>3.5.3</zxing.version>
+        <langchain4j.version>1.0.0-beta3</langchain4j.version>
     </properties>
 
     <dependencies>
@@ -140,6 +141,18 @@
             <groupId>com.google.zxing</groupId>
             <artifactId>javase</artifactId>
             <version>${zxing.version}</version>
+        </dependency>
+
+        <!-- LangChain4j 大模型集成与 Chat Completions -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>${langchain4j.version}</version>
         </dependency>
 
         <!-- Lombok -->

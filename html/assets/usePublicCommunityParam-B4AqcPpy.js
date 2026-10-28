@@ -1,1 +1,0 @@
-import{a as n,A as s,z as a}from"./index-Bfg-I1E1.js";import{u as r}from"./community-BInK3pt1.js";function f(){const o=n(),m=r(),t=a(void 0);async function u(){var i;if(!o.isLoggedIn&&!t.value){const e=await m.fetchCommunities();t.value=(i=e[0])==null?void 0:i.id}}return{communityParam:s(()=>o.isLoggedIn?void 0:t.value),initGuestCommunity:u}}export{f as u};

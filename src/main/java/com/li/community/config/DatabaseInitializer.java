@@ -69,7 +69,22 @@ public class DatabaseInitializer implements ApplicationRunner {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件秒传登记表';
                 """);
 
-            log.info("数据库 biz_post_like / biz_chat_message / sys_file 架构检查与自动初始化成功");
+            // 4. 创建 AI 百事通对话记录表
+            jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS `biz_ai_chat_record` (
+                    `id` BIGINT NOT NULL PRIMARY KEY,
+                    `user_id` BIGINT NOT NULL COMMENT '用户ID',
+                    `role` VARCHAR(20) NOT NULL COMMENT '角色: user/assistant',
+                    `content` TEXT NOT NULL COMMENT '对话正文',
+                    `card_json` VARCHAR(1000) DEFAULT NULL COMMENT '意图业务卡片JSON',
+                    `community_id` BIGINT DEFAULT NULL COMMENT '所属小区ID',
+                    `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除: 0-正常, 1-已删除',
+                    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                    KEY `idx_user_time` (`user_id`, `id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI百事通对话历史记录表';
+            """);
+
+            log.info("数据库 biz_post_like / biz_chat_message / sys_file / biz_ai_chat_record 架构检查与自动初始化成功");
 
             // 3. 补充唯一索引兜底（表已存在时 CREATE TABLE 不会生效，用 ALTER 追加；重复执行/索引已存在时忽略）
             safeExecute("ALTER TABLE `biz_activity_signup` ADD UNIQUE KEY `uk_verify_code` (`verify_code`)");
