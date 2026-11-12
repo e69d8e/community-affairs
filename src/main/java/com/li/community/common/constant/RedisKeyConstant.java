@@ -7,6 +7,9 @@ public interface RedisKeyConstant {
     // 用户级令牌吊销时间戳 (禁用/降权/改密后旧 token 失效)
     String USER_BAN_PREFIX = "community:token:user_ban:";
 
+    // 登录/注册滑块验证码 (key 后缀为 captchaId, value 为缺口 x 坐标)
+    String CAPTCHA_PREFIX = "community:captcha:";
+
     // 活动报名名额与用户集合
     String ACTIVITY_QUOTA_PREFIX = "community:activity:quota:";
     String ACTIVITY_USERS_PREFIX = "community:activity:users:";

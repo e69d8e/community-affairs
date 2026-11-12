@@ -24,4 +24,10 @@ public class AuthRegisterDto {
 
     @NotNull(message = "请选择要加入的小区")
     private Long communityId;
+
+    @NotBlank(message = "请先完成滑块人机验证")
+    private String captchaId;
+
+    @NotNull(message = "滑块验证数据缺失，请重新验证")
+    private Integer captchaX;
 }

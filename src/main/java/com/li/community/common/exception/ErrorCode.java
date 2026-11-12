@@ -20,6 +20,8 @@ public enum ErrorCode {
     PHONE_ALREADY_EXISTS(1005, "手机号已注册"),
     TOKEN_EXPIRED(1006, "登录状态已过期，请重新登录"),
     TOKEN_INVALID(1007, "无效的身份令牌"),
+    CAPTCHA_EXPIRED(1008, "滑块验证码已过期，请刷新后重试"),
+    CAPTCHA_VERIFY_FAILED(1009, "滑块验证未通过，请重试"),
 
     // 工单业务
     WORK_ORDER_NOT_FOUND(2001, "工单不存在"),

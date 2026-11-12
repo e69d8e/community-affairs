@@ -4,9 +4,11 @@ import com.li.community.common.result.Result;
 import com.li.community.model.dto.AuthLoginDto;
 import com.li.community.model.dto.AuthRegisterDto;
 import com.li.community.model.entity.BizCommunity;
+import com.li.community.model.vo.CaptchaVo;
 import com.li.community.model.vo.LoginVo;
 import com.li.community.model.vo.UserVo;
 import com.li.community.service.AuthService;
+import com.li.community.service.CaptchaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -22,6 +24,13 @@ import java.util.List;
 public class AuthController {
 
     private final AuthService authService;
+    private final CaptchaService captchaService;
+
+    @Operation(summary = "获取登录/注册滑块验证码 (背景图 + 拼图块)")
+    @GetMapping("/captcha")
+    public Result<CaptchaVo> captcha() {
+        return Result.success(captchaService.generate());
+    }
 
     @Operation(summary = "用户登录 (五大角色统一认证入口)")
     @PostMapping("/login")

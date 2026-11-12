@@ -16,6 +16,7 @@ import com.li.community.model.entity.*;
 import com.li.community.model.vo.LoginVo;
 import com.li.community.model.vo.UserVo;
 import com.li.community.service.AuthService;
+import com.li.community.service.CaptchaService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,9 +48,13 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtils;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final CaptchaService captchaService;
 
     @Override
     public LoginVo login(AuthLoginDto dto) {
+        // 滑块人机验证 (一次性校验，未通过/过期均直接拒绝)
+        captchaService.verify(dto.getCaptchaId(), dto.getCaptchaX());
+
         String inputUsername = dto.getUsername() != null ? dto.getUsername().trim() : "";
         SysUser user = userMapper.selectOne(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, inputUsername)
@@ -90,6 +95,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public LoginVo register(AuthRegisterDto dto) {
+        // 滑块人机验证 (一次性校验，未通过/过期均直接拒绝)
+        captchaService.verify(dto.getCaptchaId(), dto.getCaptchaX());
+
         // 校验用户名是否重复
         Long count = userMapper.selectCount(
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, dto.getUsername())
