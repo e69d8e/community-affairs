@@ -33,10 +33,11 @@ public class ActivityController {
     public Result<PageResult<ActivityVo>> listActivities(
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(activityService.listActivities(category, status, communityId, page, size));
+        return Result.success(activityService.listActivities(category, status, keyword, communityId, page, size));
     }
 
     @Operation(summary = "获取活动详情 (含当前用户报名状态)")

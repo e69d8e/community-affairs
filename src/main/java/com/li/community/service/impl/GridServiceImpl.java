@@ -16,6 +16,7 @@ import com.li.community.model.dto.HouseBatchGenDto;
 import com.li.community.model.dto.HouseSaveDto;
 import com.li.community.model.dto.UnitSaveDto;
 import com.li.community.model.entity.*;
+import com.li.community.model.vo.HouseBindingVo;
 import com.li.community.model.vo.UserVo;
 import com.li.community.service.GridService;
 import lombok.RequiredArgsConstructor;
@@ -25,9 +26,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -164,6 +168,9 @@ public class GridServiceImpl implements GridService {
         if (boundHouse != null) {
             checkCommunityScope(boundHouse.getCommunityId());
         }
+        if (binding.getCertStatus() != null && binding.getCertStatus() != 0) {
+            throw new BizException(ErrorCode.BAD_REQUEST, "该认证申请已审核处理，请勿重复操作");
+        }
 
         binding.setCertStatus(certStatus);
         binding.setRejectReason(rejectReason != null ? rejectReason : "");
@@ -174,10 +181,11 @@ public class GridServiceImpl implements GridService {
     }
 
     @Override
-    public PageResult<BizResidentHouse> listPendingHouseBindings(Long page, Long size) {
+    public PageResult<HouseBindingVo> listPendingHouseBindings(Integer certStatus, Long communityId, Long page, Long size) {
         Page<BizResidentHouse> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
 
         LambdaQueryWrapper<BizResidentHouse> wrapper = new LambdaQueryWrapper<BizResidentHouse>()
+                .eq(certStatus != null, BizResidentHouse::getCertStatus, certStatus)
                 .orderByDesc(BizResidentHouse::getCreateTime);
 
         // 网格员数据范围：仅可见本人负责楼栋下房屋的绑定申请
@@ -188,8 +196,8 @@ public class GridServiceImpl implements GridService {
             }
             wrapper.in(BizResidentHouse::getHouseId, houseIds);
         } else {
-            // 其他管理角色: 非平台管理员仅可见本人小区房屋的绑定申请
-            Long communityScope = scopeResolver.resolveAdminScope(null);
+            // 其他管理角色: 非平台管理员仅可见本人小区房屋的绑定申请；平台管理员支持按社区过滤
+            Long communityScope = scopeResolver.resolveAdminScope(communityId);
             if (communityScope != null) {
                 List<Long> communityHouseIds = houseMapper.selectList(
                                 new LambdaQueryWrapper<BizHouse>()
@@ -204,7 +212,73 @@ public class GridServiceImpl implements GridService {
         }
 
         Page<BizResidentHouse> result = residentHouseMapper.selectPage(pageParam, wrapper);
-        return PageResult.of(result);
+        List<BizResidentHouse> records = result.getRecords();
+        if (records.isEmpty()) {
+            return PageResult.of(new ArrayList<>(), result.getTotal(), result.getSize(), result.getCurrent());
+        }
+
+        Set<Long> userIds = records.stream().map(BizResidentHouse::getUserId).collect(Collectors.toSet());
+        Set<Long> houseIds = records.stream().map(BizResidentHouse::getHouseId).collect(Collectors.toSet());
+
+        Map<Long, SysUser> userMap = userIds.isEmpty() ? Collections.emptyMap() :
+                sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>().in(SysUser::getId, userIds))
+                        .stream().collect(Collectors.toMap(SysUser::getId, Function.identity(), (a, b) -> a));
+
+        Map<Long, BizHouse> houseMap = houseIds.isEmpty() ? Collections.emptyMap() :
+                houseMapper.selectList(new LambdaQueryWrapper<BizHouse>().in(BizHouse::getId, houseIds))
+                        .stream().collect(Collectors.toMap(BizHouse::getId, Function.identity(), (a, b) -> a));
+
+        Set<Long> buildingIds = houseMap.values().stream().map(BizHouse::getBuildingId).collect(Collectors.toSet());
+        Set<Long> unitIds = houseMap.values().stream().map(BizHouse::getUnitId).collect(Collectors.toSet());
+        Set<Long> communityIds = houseMap.values().stream().map(BizHouse::getCommunityId).collect(Collectors.toSet());
+
+        Map<Long, BizBuilding> buildingMap = buildingIds.isEmpty() ? Collections.emptyMap() :
+                buildingMapper.selectList(new LambdaQueryWrapper<BizBuilding>().in(BizBuilding::getId, buildingIds))
+                        .stream().collect(Collectors.toMap(BizBuilding::getId, Function.identity(), (a, b) -> a));
+        Map<Long, BizUnit> unitMap = unitIds.isEmpty() ? Collections.emptyMap() :
+                unitMapper.selectList(new LambdaQueryWrapper<BizUnit>().in(BizUnit::getId, unitIds))
+                        .stream().collect(Collectors.toMap(BizUnit::getId, Function.identity(), (a, b) -> a));
+        Map<Long, BizCommunity> communityMap = communityIds.isEmpty() ? Collections.emptyMap() :
+                communityMapper.selectList(new LambdaQueryWrapper<BizCommunity>().in(BizCommunity::getId, communityIds))
+                        .stream().collect(Collectors.toMap(BizCommunity::getId, Function.identity(), (a, b) -> a));
+
+        List<HouseBindingVo> vos = records.stream().map(b -> {
+            SysUser user = userMap.get(b.getUserId());
+            BizHouse house = houseMap.get(b.getHouseId());
+            BizBuilding building = house != null ? buildingMap.get(house.getBuildingId()) : null;
+            BizUnit unit = house != null ? unitMap.get(house.getUnitId()) : null;
+            BizCommunity comm = house != null ? communityMap.get(house.getCommunityId()) : null;
+
+            String residentName = user != null
+                    ? ((user.getRealName() != null && !user.getRealName().isBlank()) ? user.getRealName() : user.getUsername())
+                    : ("用户#" + b.getUserId());
+            String bName = building != null ? building.getBuildingName() : "";
+            String uName = unit != null ? unit.getUnitName() : "";
+            String hNo = house != null ? house.getHouseNo() : String.valueOf(b.getHouseId());
+            String addr = String.join(" ", java.util.Arrays.stream(new String[]{bName, uName, hNo})
+                    .filter(s -> s != null && !s.isBlank()).toList());
+
+            return HouseBindingVo.builder()
+                    .id(b.getId())
+                    .userId(b.getUserId())
+                    .residentName(residentName)
+                    .residentPhone(user != null ? user.getPhone() : "")
+                    .houseId(b.getHouseId())
+                    .communityName(comm != null ? comm.getName() : "")
+                    .buildingName(bName)
+                    .unitName(uName)
+                    .houseNo(hNo)
+                    .houseAddress(addr)
+                    .identityType(b.getIdentityType())
+                    .certStatus(b.getCertStatus())
+                    .certMaterial(b.getCertMaterial())
+                    .rejectReason(b.getRejectReason())
+                    .reviewTime(b.getReviewTime())
+                    .createTime(b.getCreateTime())
+                    .build();
+        }).collect(Collectors.toList());
+
+        return PageResult.of(vos, result.getTotal(), result.getSize(), result.getCurrent());
     }
 
     /**

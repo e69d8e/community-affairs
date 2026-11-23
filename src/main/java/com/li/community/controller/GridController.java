@@ -8,6 +8,7 @@ import com.li.community.model.dto.HouseBatchGenDto;
 import com.li.community.model.dto.HouseSaveDto;
 import com.li.community.model.dto.UnitSaveDto;
 import com.li.community.model.entity.*;
+import com.li.community.model.vo.HouseBindingVo;
 import com.li.community.model.vo.UserVo;
 import com.li.community.service.GridService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -68,13 +69,15 @@ public class GridController {
         return Result.success("房屋认证申请已提交，请等待网格员或物业审核", null);
     }
 
-    @Operation(summary = "管理端获取待审核房屋绑定申请 (网格员仅可见本人负责楼栋)")
+    @Operation(summary = "管理端获取房屋认证绑定列表 (默认按条件过滤，网格员仅可见本人负责楼栋)")
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'COMMUNITY_ADMIN', 'PROPERTY_ADMIN', 'GRID_OFFICER')")
     @GetMapping("/admin/house-bind/list")
-    public Result<PageResult<BizResidentHouse>> listPendingHouseBindings(
+    public Result<PageResult<HouseBindingVo>> listPendingHouseBindings(
+            @RequestParam(required = false) Integer certStatus,
+            @RequestParam(required = false) Long communityId,
             @RequestParam(defaultValue = "1") Long page,
             @RequestParam(defaultValue = "10") Long size) {
-        return Result.success(gridService.listPendingHouseBindings(page, size));
+        return Result.success(gridService.listPendingHouseBindings(certStatus, communityId, page, size));
     }
 
     @Operation(summary = "网格员/管理员审批房屋绑定申请")

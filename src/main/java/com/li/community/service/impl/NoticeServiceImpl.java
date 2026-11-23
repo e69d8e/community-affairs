@@ -47,15 +47,19 @@ public class NoticeServiceImpl implements NoticeService {
     private final CommunityScopeResolver scopeResolver;
 
     @Override
-    public PageResult<SysNotice> listNotices(Integer noticeType, Long communityId, Long page, Long size) {
+    public PageResult<SysNotice> listNotices(Integer noticeType, String keyword, Long communityId, Long page, Long size) {
         Page<SysNotice> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
         Long communityScope = scopeResolver.resolvePublicScope(communityId);
+        String kw = keyword != null ? keyword.trim() : null;
+        boolean hasKw = kw != null && !kw.isEmpty();
+
         Page<SysNotice> result = noticeMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<SysNotice>()
                         .eq(communityScope != null, SysNotice::getCommunityId, communityScope)
                         .eq(noticeType != null, SysNotice::getNoticeType, noticeType)
                         .eq(SysNotice::getStatus, 1) // 仅已发布
+                        .and(hasKw, w -> w.like(SysNotice::getTitle, kw).or().like(SysNotice::getContent, kw))
                         .orderByDesc(SysNotice::getIsTop)
                         .orderByDesc(SysNotice::getPublishTime)
         );

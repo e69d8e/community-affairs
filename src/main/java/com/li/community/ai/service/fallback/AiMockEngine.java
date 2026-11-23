@@ -161,38 +161,53 @@ public class AiMockEngine {
         int isUrgent = 0;
         String urgentReason = "常见普通日常报修，师傅将在预约时段内上门检查。";
 
-        if (lower.contains("水") || lower.contains("漏水") || lower.contains("水管") 
-                || lower.contains("龙头") || lower.contains("管道") || lower.contains("渗水")
-                || lower.contains("下水道") || lower.contains("堵了")) {
-            category = "给排水系统";
-            title = "室内/公用给排水管道故障报修";
-            if (lower.contains("爆") || lower.contains("喷") || lower.contains("淹") || lower.contains("急") || lower.contains("一直漏")) {
+        // 优先匹配专项/非歧义场景，避免“电梯”“电动车”“小广告(在电梯口)”被宽泛“电”关键词误拦截
+        if (containsAny(lower, "小广告", "贴纸", "牛皮癣", "垃圾", "发臭", "脏乱", "绿化", "高空抛物", "堆物", "杂物")) {
+            category = "环境卫生";
+            title = "小区楼道与公共环境卫生工单";
+            if (containsAny(lower, "高空抛物", "消防通道", "阻塞")) {
                 isUrgent = 1;
-                urgentReason = "检测到管道破裂持续涌水，存在浸湿楼板及引发电气次生灾害隐患，标记为紧急！";
+                urgentReason = "涉及高空抛物或通道阻挡安全隐患，标记为优先处置！";
             }
-        } else if (lower.contains("电") || lower.contains("跳闸") || lower.contains("断电") 
-                || lower.contains("插座") || lower.contains("线路") || lower.contains("冒烟")
-                || lower.contains("电线") || lower.contains("火花")) {
-            category = "强电弱电";
-            title = "室内供电/电气线路故障报修";
-            if (lower.contains("冒烟") || lower.contains("火花") || lower.contains("全部断电") || lower.contains("危险")) {
-                isUrgent = 1;
-                urgentReason = "现场存在线路异响、冒烟或全部停电隐患，存在火灾次生风险，升级为紧急工单！";
-            }
-        } else if (lower.contains("电梯") || lower.contains("轿厢") || lower.contains("停梯") || lower.contains("困人")) {
+        } else if (containsAny(lower, "电梯", "客梯", "货梯", "轿厢", "停梯", "困人", "平层")) {
             category = "电梯公用";
             title = "单元电梯运行故障报修";
             isUrgent = 1;
-            urgentReason = "电梯属于特种高危特种设备，涉及居民人身通行安全，一律按紧急优先响应！";
-        } else if (lower.contains("门禁") || lower.contains("大门") || lower.contains("监控") || lower.contains("道闸")) {
+            urgentReason = "电梯属于特种设备，涉及居民人身通行安全，一律按紧急优先响应！";
+        } else if (containsAny(lower, "飞线", "电瓶车", "电动车")) {
+            category = "飞线充电隐患";
+            title = "电动车违规停放与飞线充电排查";
+            isUrgent = 1;
+            urgentReason = "私拉飞线与违规停放充电存在重大消防火灾风险，升级为紧急工单！";
+        } else if (containsAny(lower, "漏水", "水管", "水龙头", "管道", "渗水", "积水", "下水道", "水阀", "水压", "水箱", "堵了", "反水", "水")) {
+            category = "给排水系统";
+            title = "室内/公用给排水管道故障报修";
+            if (containsAny(lower, "爆", "喷", "淹", "急", "一直漏", "不停")) {
+                isUrgent = 1;
+                urgentReason = "检测到管道破裂持续涌水，存在浸湿楼板及引发电气次生灾害隐患，标记为紧急！";
+            }
+        } else if (containsAny(lower, "跳闸", "断电", "停电", "插座", "线路", "冒烟", "电线", "火花", "漏电", "照明", "灯泡", "路灯", "配电", "电闸", "开关")) {
+            category = "强电弱电";
+            title = "照明与供电线路故障报修";
+            if (containsAny(lower, "冒烟", "火花", "全部断电", "危险", "焦味", "触电")) {
+                isUrgent = 1;
+                urgentReason = "现场存在线路异响、冒烟或全部停电隐患，存在火灾次生风险，升级为紧急工单！";
+            }
+        } else if (containsAny(lower, "门禁", "大门", "磁吸锁", "监控", "道闸", "对讲")) {
             category = "门禁安防";
             title = "门禁系统与安防道闸故障报修";
-        } else if (lower.contains("垃圾") || lower.contains("臭") || lower.contains("脏") || lower.contains("绿化")) {
-            category = "环境卫生";
-            title = "小区楼道与公共环境卫生保洁工单";
+        } else if (containsAny(lower, "违停", "乱停", "占道", "消防通道", "停车")) {
+            category = "违规停放车辆";
+            title = "车辆违规停放占道投诉反馈";
+        } else if (containsAny(lower, "噪音", "吵", "喧闹", "扰民")) {
+            category = "深夜噪音扰民";
+            title = "社区噪音扰民协调处置";
+        } else if (containsAny(lower, "狗", "宠物", "牵引绳", "未拴")) {
+            category = "宠物未拴绳纠纷";
+            title = "文明养犬规范管理反馈";
         }
 
-        String standardContent = String.format("居民在线申报反馈：%s。经 AI 辅助分析，归属【%s】领域，建议责任人员携带专业检测工具预约核验。", 
+        String standardContent = String.format("居民在线申报反馈：%s。经 AI 辅助分析，归属【%s】领域，建议责任人员携带专业检测工具预约核验。",
                 text, category);
 
         return AiOrderParseVo.builder()
@@ -208,8 +223,10 @@ public class AiMockEngine {
      * 管理端工单研判 Mock 引擎
      */
     public AiOrderTriageVo triageOrderMock(AiOrderTriageDto dto) {
-        String category = dto.getCategory() != null ? dto.getCategory() : "设施";
-        String content = dto.getContent() != null ? dto.getContent() : "";
+        String category = dto.getCategory() != null ? dto.getCategory().trim() : "";
+        String title = dto.getTitle() != null ? dto.getTitle().trim() : "";
+        String content = dto.getContent() != null ? dto.getContent().trim() : "";
+        String fullText = (title + " " + content).toLowerCase();
 
         String faultDiagnosis;
         String maintenanceTips;
@@ -217,24 +234,56 @@ public class AiMockEngine {
         double estimatedHours = 1.5;
         String suggestedAuditRemark;
 
-        if (category.contains("给排水") || content.contains("水")) {
+        // 优先识别环境保洁/小广告清理，避免“电梯口贴小广告”被误判为电梯维保或强电故障
+        if (containsAny(category, "卫生", "绿化", "抛物")
+                || containsAny(fullText, "小广告", "贴纸", "牛皮癣", "清理", "保洁", "垃圾", "堆物", "杂物", "发臭", "脏乱", "绿化", "高空抛物")) {
+            faultDiagnosis = "初步研判：公共楼道环境卫生维护不足、违章张贴小广告或杂物堆积影响通行与社区形象。";
+            maintenanceTips = "1. 携带除胶剂、铲刀、垃圾袋或绿化修剪工具到场作业；2. 清理恢复后拍照留痕并调看周边监控；3. 联合网格员加强重点单元楼道日常巡查。";
+            recommendedRole = "物业环境保洁专员";
+            estimatedHours = 1.0;
+            suggestedAuditRemark = "已初审通过。属公共环境清理维护事项，请保洁班组携带除胶清洁工具及时处置并拍照留档。";
+        } else if (containsAny(category, "电梯")
+                || containsAny(fullText, "电梯", "客梯", "货梯", "轿厢", "停梯", "困人", "平层")) {
+            faultDiagnosis = "初步研判：电梯安全回路传感器灵敏度漂移、门机光幕脏污感应异常或轿厢导靴平层间隙偏差。";
+            maintenanceTips = "1. 首要确认轿厢内无被困乘客；2. 在首层及故障楼层设置停梯安全护栏与警示标牌；3. 调取主板故障代码并联动维保原厂驻点工程师联合检修。";
+            recommendedRole = "电梯特种设备维保专员";
+            estimatedHours = 2.0;
+            suggestedAuditRemark = "已加急审核。电梯公共设施涉及特种安全，已通知专业驻点维保机构即刻到场，做好围挡与居民告示。";
+        } else if (containsAny(category, "飞线")
+                || containsAny(fullText, "飞线", "电瓶车", "电动车", "消防通道")) {
+            faultDiagnosis = "初步研判：存在违规私拉飞线充电或消防疏散通道占堵安全隐患，需即时现场劝阻与溯源整改。";
+            maintenanceTips = "1. 到场拍照固定隐患位置与涉事车辆信息；2. 第一时间断电收缴违规飞线并引导至集中智能充电桩；3. 联合社区网格员上门宣导签收整改告知书。";
+            recommendedRole = "消防安全网格专员";
+            estimatedHours = 1.0;
+            suggestedAuditRemark = "已加急审核。涉及消防安全红线，请网格员与秩序巡逻队立即到场消除隐患并做好安全登记。";
+        } else if ((containsAny(category, "给排水", "水电", "管道") && !containsAny(fullText, "跳闸", "断电", "电线", "插座", "漏电"))
+                || containsAny(fullText, "漏水", "水管", "水龙头", "渗水", "积水", "下水道", "水阀", "水压", "管道")) {
             faultDiagnosis = "初步研判：高层水管水锤压力冲击或接口老化导致管件接头松动渗水，部分情况伴随地漏回返或密封胶脱落。";
             maintenanceTips = "1. 到场前致电业主指导关闭户内冷热水进水阀门；2. 携带 PPR 热熔焊机、生料带、管钳及备用 20/25mm 弯头管件；3. 主动勘验楼下天花板是否存在渗斑。";
             recommendedRole = "综合维修工 (水电水暖专长)";
             estimatedHours = 1.5;
             suggestedAuditRemark = "已初审通过。属给排水故障，已推荐派发水暖技能维修师傅，请务必备好管钳与防护用具尽速排查。";
-        } else if (category.contains("电") || content.contains("电")) {
-            faultDiagnosis = "初步研判：支路空气开关瞬时过载跳闸，或电器绝缘皮老化破损引起微弱漏电保护动作。";
-            maintenanceTips = "1. 上门前务必佩戴绝缘手套与防电护具；2. 使用万用表和兆欧表分段逐路测量线路对地绝缘电阻；3. 排查大功率用电设备插座接触点是否碳化。";
+        } else if (containsAny(category, "照明", "强电", "弱电", "水电")
+                || containsAny(fullText, "跳闸", "断电", "停电", "漏电", "电线", "插座", "灯泡", "照明", "闪烁", "配电", "线路", "火花", "冒烟", "电闸")) {
+            faultDiagnosis = "初步研判：支路空气开关瞬时过载跳闸、灯具驱动电源老化或线路绝缘破损引起漏电保护动作。";
+            maintenanceTips = "1. 上门前务必佩戴绝缘手套与防电护具；2. 使用万用表和兆欧表分段逐路测量线路对地绝缘电阻；3. 排查大功率用电设备插座与灯具镇流器接点。";
             recommendedRole = "低压电工 (特种作业持证)";
             estimatedHours = 1.0;
-            suggestedAuditRemark = "已审核通过。涉及用电安全，请安排持特种作业操作证的专业电工师傅上门，严禁违章带电检修。";
-        } else if (category.contains("电梯") || content.contains("梯")) {
-            faultDiagnosis = "初步研判：电梯安全回路传感器灵敏度漂移、光幕脏污感应异常或轿厢平层感应器间隙过大。";
-            maintenanceTips = "1. 首要确认轿厢内无被困乘客；2. 在首层及故障楼层设置停梯安全护栏与警示标牌；3. 调取主板故障代码并联动维保原厂驻点工程师联合检修。";
-            recommendedRole = "电梯特种设备维保专员";
-            estimatedHours = 2.0;
-            suggestedAuditRemark = "已加急审核。电梯公共设施涉及特种安全，已通知专业驻点维保机构即刻到场，做好围挡与居民告示。";
+            suggestedAuditRemark = "已审核通过。涉及用电与照明安全，请安排持特种作业操作证的专业电工师傅上门，严禁违章带电检修。";
+        } else if (containsAny(category, "门禁", "安防", "道闸")
+                || containsAny(fullText, "门禁", "道闸", "磁吸锁", "监控", "对讲")) {
+            faultDiagnosis = "初步研判：门禁磁吸锁供电电压不稳、闭门器阻尼偏位或读卡模块通信链路松动。";
+            maintenanceTips = "1. 携带备用 12V 门禁电源适配器与测线仪；2. 检查磁吸锁吸附面错位与出门开关接线；3. 测试后台刷卡/人脸识别下发同步状态。";
+            recommendedRole = "弱电安防工程师";
+            estimatedHours = 1.5;
+            suggestedAuditRemark = "已审核通过。请安排弱电安防工程师上门检修门禁道闸控制模块，确保单元通行安全闭环。";
+        } else if (containsAny(category, "停放", "噪音", "宠物", "物业")
+                || (dto.getOrderType() != null && dto.getOrderType() == 2)) {
+            faultDiagnosis = "初步研判：属于社区秩序维护、邻里纠纷协调或物业服务履约类诉求，需网格员现场核实沟通。";
+            maintenanceTips = "1. 联系投诉居民进一步了解时间段与具体点位；2. 到场核查并礼貌劝导当事方整改；3. 形成网格调解记录并回访居民确认满意度。";
+            recommendedRole = "社区网格调解专员";
+            estimatedHours = 1.5;
+            suggestedAuditRemark = "已受理分派。请责任网格员结合秩序队员现场实地核查协调，及时向居民反馈调解进展。";
         } else {
             faultDiagnosis = "初步研判：公共基础设施日常磨损或损耗性部件自然老化，需实地勘查定损。";
             maintenanceTips = "1. 联系申报人约定精确上门时间；2. 拍照留存处置前现场原始状态凭证；3. 维修完毕后清理施工废料垃圾并请业主签署确认单。";
@@ -250,6 +299,18 @@ public class AiMockEngine {
                 .estimatedHours(estimatedHours)
                 .suggestedAuditRemark(suggestedAuditRemark)
                 .build();
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        for (String kw : keywords) {
+            if (text.contains(kw)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static class FaqEntry {

@@ -9,7 +9,7 @@ import java.util.Map;
 
 public interface NoticeService {
 
-    PageResult<SysNotice> listNotices(Integer noticeType, Long communityId, Long page, Long size);
+    PageResult<SysNotice> listNotices(Integer noticeType, String keyword, Long communityId, Long page, Long size);
 
     SysNotice getNoticeDetail(Long noticeId);
 

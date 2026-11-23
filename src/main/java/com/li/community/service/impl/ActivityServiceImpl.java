@@ -76,16 +76,22 @@ public class ActivityServiceImpl implements ActivityService {
     }
 
     @Override
-    public PageResult<ActivityVo> listActivities(String category, Integer status, Long communityId, Long page, Long size) {
+    public PageResult<ActivityVo> listActivities(String category, Integer status, String keyword, Long communityId, Long page, Long size) {
         Page<BizActivity> pageParam = new Page<>(page != null ? page : 1, size != null ? size : 10);
 
         Long communityScope = scopeResolver.resolvePublicScope(communityId);
+        String kw = keyword != null ? keyword.trim() : null;
+        boolean hasKw = kw != null && !kw.isEmpty();
+
         Page<BizActivity> result = activityMapper.selectPage(
                 pageParam,
                 new LambdaQueryWrapper<BizActivity>()
                         .eq(communityScope != null, BizActivity::getCommunityId, communityScope)
                         .eq(category != null && !category.isEmpty(), BizActivity::getCategory, category)
                         .eq(status != null, BizActivity::getStatus, status)
+                        .and(hasKw, w -> w.like(BizActivity::getTitle, kw)
+                                .or().like(BizActivity::getLocation, kw)
+                                .or().like(BizActivity::getDescription, kw))
                         .orderByDesc(BizActivity::getCreateTime)
         );
 

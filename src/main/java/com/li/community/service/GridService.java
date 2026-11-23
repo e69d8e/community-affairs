@@ -7,6 +7,7 @@ import com.li.community.model.dto.HouseBatchGenDto;
 import com.li.community.model.dto.HouseSaveDto;
 import com.li.community.model.dto.UnitSaveDto;
 import com.li.community.model.entity.*;
+import com.li.community.model.vo.HouseBindingVo;
 import com.li.community.model.vo.UserVo;
 
 import java.util.List;
@@ -27,7 +28,7 @@ public interface GridService {
 
     void auditHouseBinding(Long bindingId, Integer certStatus, String rejectReason);
 
-    PageResult<BizResidentHouse> listPendingHouseBindings(Long page, Long size);
+    PageResult<HouseBindingVo> listPendingHouseBindings(Integer certStatus, Long communityId, Long page, Long size);
 
     // ==================== 楼宇空间结构维护（管理端） ====================
 
